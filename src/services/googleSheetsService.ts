@@ -51,23 +51,62 @@ export class GoogleSheetsService {
       return [];
     }
 
-    try {
-      const url = `${this.baseUrl}/${sheetId}/values/${range}?key=${this.config.apiKey}`;
-      const response = await fetch(url);
+    const maxRetries = 5;
+    let retryCount = 0;
+    let retryDelay = 1000; // Start with 1 second delay
 
-      if (!response.ok) {
+    while (retryCount < maxRetries) {
+      try {
+        const url = `${this.baseUrl}/${sheetId}/values/${range}?key=${this.config.apiKey}`;
+        const response = await fetch(url);
+
+        if (response.ok) {
+          const data: SheetData = await response.json();
+          return data.values || [];
+        }
+
+        if (response.status === 429) {
+          // Rate limit hit - need to retry after delay
+          retryCount++;
+          console.log(`Rate limit hit. Retry ${retryCount}/${maxRetries} after ${retryDelay}ms delay`);
+          
+          // Wait for the delay period
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          
+          // Exponential backoff with jitter
+          retryDelay = retryDelay * 2 + Math.random() * 1000;
+          continue;
+        }
+
+        // For other errors, throw
         throw new Error(`HTTP error! status: ${response.status}`);
+      } catch (error) {
+        if (retryCount >= maxRetries - 1) {
+          console.error('Error fetching sheet data after retries:', error);
+          return [];
+        }
+        retryCount++;
+        console.log(`Error occurred. Retry ${retryCount}/${maxRetries} after ${retryDelay}ms delay`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        retryDelay = retryDelay * 2 + Math.random() * 1000;
       }
-
-      const data: SheetData = await response.json();
-      return data.values || [];
-    } catch (error) {
-      console.error('Error fetching sheet data:', error);
-      return [];
     }
+
+    console.error('Max retries reached for fetching sheet data');
+    return [];
   }
 
+  private helperDataCache: any[] | null = null;
+  private lastFetchTime: number = 0;
+  private cacheTTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
   async getHelperData(): Promise<any[]> {
+    const now = Date.now();
+    if (this.helperDataCache && (now - this.lastFetchTime < this.cacheTTL)) {
+      console.log('Using cached helper data');
+      return this.helperDataCache;
+    }
+
     const data = await this.fetchSheetData(this.config.helperSheetId, 'Helper Masterdata!A:Z');
 
     if (!Array.isArray(data) || data.length === 0) {
@@ -77,49 +116,12 @@ export class GoogleSheetsService {
 
     const headers = data[0];
     const rows = data.slice(1);
-
-    return rows.map(row => {
-      const helper: any = {};
-      headers.forEach((header, index) => {
-        const value = row[index] || 'NA';
-        // Map header to field name
-        const fieldMap: { [key: string]: string } = {
-          'Helper Code': 'code',
-          'Name': 'name',
-          'Nationality': 'nationality',
-          'Age': 'age',
-          'Experience': 'experience',
-          'English': 'english',
-          'Height': 'height',
-          'Weight': 'weight',
-          'Religion': 'religion',
-          'Education': 'education',
-          'Marital Status': 'marital',
-          'Children': 'children',
-          'Salary': 'salary',
-          'Availability': 'availability',
-          'Status': 'status',
-          'Job Scope': 'jobscope',
-          'Notes': 'notes',
-          'Focus Area': 'focus_area',
-          'Passport Ready': 'passport_ready',
-          'Transfer Ready': 'transfer_ready'
-        };
-        const fieldName = fieldMap[header] || header.toLowerCase().replace(/\s+/g, '_');
-
-        // Parse types
-        if (['age', 'experience', 'height', 'weight', 'salary'].includes(fieldName)) {
-          helper[fieldName] = parseInt(value) || 0;
-        } else if (['jobscope', 'focus_area'].includes(fieldName)) {
-          helper[fieldName] = value.split(',').map((item: string) => item.trim()).filter((item: string) => item);
-        } else if (['passport_ready', 'transfer_ready'].includes(fieldName)) {
-          helper[fieldName] = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
-        } else {
-          helper[fieldName] = value;
-        }
-      });
-      return helper;
-    });
+    
+    // Update cache
+    this.helperDataCache = rows.map(row => this.mapRowToHelper(headers, row));
+    this.lastFetchTime = now;
+    
+    return this.helperDataCache;
   }
 
   async getQuestions(): Promise<any[]> {
@@ -355,5 +357,86 @@ export class GoogleSheetsService {
       passport_ready: !!helper.passport_ready,
       transfer_ready: !!helper.transfer_ready
     }));
+  }
+
+  /**
+   * Maps a row from the Google Sheet to a Helper object
+   */
+  private mapRowToHelper(headers: string[], row: string[]): any {
+    const helper: any = {};
+    
+    // Map each column to the corresponding property
+    headers.forEach((header, index) => {
+      if (index < row.length) {
+        const value = row[index];
+        
+        // Map headers to helper properties
+        switch(header.toLowerCase().trim()) {
+          case 'code':
+            helper.code = value;
+            break;
+          case 'name':
+            helper.name = value;
+            break;
+          case 'nationality':
+            helper.nationality = value;
+            break;
+          case 'age':
+            helper.age = parseInt(value) || 0;
+            break;
+          case 'helper exp.':
+          case 'experience':
+            helper.experience = parseInt(value) || 0;
+            break;
+          case 'language':
+          case 'english':
+            helper.english = value;
+            break;
+          case 'height (cm)':
+          case 'height':
+            helper.height = parseInt(value) || 0;
+            break;
+          case 'weight (kg)':
+          case 'weight':
+            helper.weight = parseInt(value) || 0;
+            break;
+          case 'religion':
+            helper.religion = value;
+            break;
+          case 'education':
+            helper.education = value;
+            break;
+          case 'marital':
+          case 'marital status':
+            helper.marital = value;
+            break;
+          case 'children':
+            helper.children = value;
+            break;
+          case 'salary':
+            helper.salary = parseInt(value) || 0;
+            break;
+          case 'availability':
+            helper.availability = value;
+            break;
+          case 'status':
+            helper.status = value;
+            break;
+          case 'work experience':
+          case 'notes':
+            helper.notes = value;
+            break;
+          // Add any other fields you need to map
+        }
+      }
+    });
+    
+    // Set default values for arrays and other complex types
+    helper.jobscope = helper.jobscope || [];
+    helper.focus_area = helper.focus_area || [];
+    helper.passport_ready = !!helper.passport_ready;
+    helper.transfer_ready = !!helper.transfer_ready;
+    
+    return helper;
   }
 }

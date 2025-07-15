@@ -1,6 +1,15 @@
 import React from 'react';
 import { MatchResult } from '../../types';
-import { CheckCircle, AlertCircle, XCircle, User, Globe, Star, Calendar, DollarSign } from 'lucide-react';
+import {
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  User,
+  Globe,
+  Star,
+  Calendar,
+  DollarSign,
+} from 'lucide-react';
 
 interface MatchingResultsProps {
   results: MatchResult[];
@@ -13,7 +22,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
   results,
   excludedBios,
   customerName,
-  customerContact
+  customerContact,
 }) => {
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -45,7 +54,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     return {
       full: fullMatches.map(m => m.criteria),
       partial: partialMatches.map(m => m.criteria),
-      missed: mismatches.map(m => m.criteria)
+      missed: mismatches.map(m => m.criteria),
     };
   };
 
@@ -68,6 +77,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Low match score warning */}
       {hasLowScoreMatches && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center space-x-2">
@@ -79,18 +89,20 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
           </p>
         </div>
       )}
-      
+
+      {/* Excluded bios section */}
       {excludedBios.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h3 className="font-semibold text-red-800 mb-2">❌ Excluded bios (previously sent):</h3>
-          <ul className="text-red-700 space-y-1">
+          <ul className="text-red-700 space-y-1 list-disc pl-4">
             {excludedBios.map((bio, idx) => (
-              <li key={bio + '-' + idx}>- {bio}</li>
+              <li key={`excluded-bio-${idx}`}>{bio}</li>
             ))}
           </ul>
         </div>
       )}
 
+      {/* Results Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
@@ -99,11 +111,11 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         </div>
 
         <div className="divide-y divide-gray-200">
-          {results.slice(0, 3).map(result => {
+          {results.slice(0, 3).map((result, index) => {
             const summary = getMatchSummary(result.matches);
             
             return (
-              <div key={result.helper.code} className="p-6">
+              <div key={`helper-result-${index}`} className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <div className="bg-blue-100 p-2 rounded-lg">
@@ -113,7 +125,9 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                       <h3 className="text-lg font-semibold text-gray-900">
                         {result.helper.name}
                       </h3>
-                      <p className="text-sm text-gray-600">Helper Code: {result.helper.code}</p>
+                      <p className="text-sm text-gray-600">
+                        Helper Code: {result.helper.code || 'N/A'}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -159,7 +173,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {result.matches.map((match, matchIndex) => (
-                        <tr key={matchIndex} className="hover:bg-gray-50">
+                        <tr key={`match-row-${matchIndex}`} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-sm font-medium text-gray-900">
                             {match.criteria}
                           </td>

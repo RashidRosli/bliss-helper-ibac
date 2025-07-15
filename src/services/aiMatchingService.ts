@@ -11,17 +11,22 @@ export class AIMatchingService {
     private helperToText(helper: Helper): string {
         return `
       Nationality: ${helper.nationality}.
-      Type: ${helper.status || 'Unknown'}.
+      Status: ${helper.status || 'Unknown'}.
       Experience: ${helper.experience} years.
       Age: ${helper.age}.
-      Language: ${helper.english}.
+      English: ${helper.english}.
       Height: ${helper.height} cm.
       Weight: ${helper.weight} kg.
       Religion: ${helper.religion}.
       Education: ${helper.education}.
       Marital Status: ${helper.marital}.
       Children: ${helper.children}.
+      Salary: SGD ${helper.salary}.
+      Availability: ${helper.availability}.
       Job Scope: ${(helper.jobscope || []).join(', ')}.
+      Focus Areas: ${(helper.focus_area || []).join(', ')}.
+      Passport Ready: ${helper.passport_ready ? 'Yes' : 'No'}.
+      Transfer Ready: ${helper.transfer_ready ? 'Yes' : 'No'}.
       Notes: ${helper.notes || ''}.
     `;
     }
@@ -30,16 +35,30 @@ export class AIMatchingService {
     private requirementsToText(requirements: EmployerRequirements): string {
         return `
       Job Scope: ${(requirements.jobscope || []).join(', ')}.
-      Has Children Ages: ${(requirements.childrenAges || []).join(', ')}.
-      Has Elderly: ${requirements.elderlyRelationship ? 'Yes' : 'No'}.
-      Has Pets: ${(requirements.pets && requirements.pets.length > 0) ? 'Yes' : 'No'}.
+      First Time Helper: ${requirements.firstTimeHelper ? 'Yes' : 'No'}.
+      Children Ages: ${(requirements.childrenAges || []).join(', ')}.
+      Elderly Relationship: ${requirements.elderlyRelationship}.
+      Pets: ${(requirements.pets || []).join(', ')}.
+      Residence Type: ${requirements.residenceType}.
+      Room Sharing: ${requirements.roomSharing ? 'Yes' : 'No'}.
+      Start Date: ${requirements.startDate}.
+      Preferences: ${requirements.preferences}.
+      Budget: SGD ${requirements.budget}.
       Nationality Preferences: ${(requirements.nationalityPreferences || []).join(', ')}.
+      Helper Type: ${requirements.helperType}.
       Age Preference: ${requirements.agePreference}.
       English Requirement: ${requirements.englishRequirement}.
-      Education Requirement: ${requirements.educationRequirement}.
+      Height Preference: ${requirements.heightPreference}.
+      Weight Preference: ${requirements.weightPreference}.
       Experience Tags: ${(requirements.experienceTags || []).join(', ')}.
       Religion Preference: ${requirements.religionPreference}.
-      Marital Status Preference: ${requirements.maritalPreference}.
+      Education Requirement: ${requirements.educationRequirement}.
+      Marital Preference: ${requirements.maritalPreference}.
+      Helper Children Ages: ${requirements.helperChildrenAges}.
+      Focus Areas: ${(requirements.focusArea || []).join(', ')}.
+      Employer Race: ${requirements.employerRace}.
+      Referral Source: ${requirements.referralSource}.
+      Excluded Bios: ${(requirements.excludedBios || []).join(', ')}.
     `;
     }
 
@@ -92,18 +111,26 @@ export class AIMatchingService {
         requirements: EmployerRequirements,
         helpers: Helper[]
     ): Promise<{ helper: Helper, score: number }[]> {
+        // Exclude empty helpers - using only properties that exist in the Helper interface
+        const nonEmptyHelpers = helpers.filter(h =>
+            h.name?.trim() || h.code?.trim() || h.availability?.trim() || 
+            (h.jobscope && h.jobscope.length > 0) || 
+            (h.focus_area && h.focus_area.length > 0) || 
+            h.notes?.trim()
+        );
+        
         // Generate embedding for employer requirements
         const requirementsText = this.requirementsToText(requirements);
         const requirementsEmbedding = await this.generateEmbedding(requirementsText);
-
+    
         // Calculate similarity scores for each helper
-        const matches = await Promise.all(helpers.map(async (helper) => {
+        const matches = await Promise.all(nonEmptyHelpers.map(async (helper) => {
             const helperText = this.helperToText(helper);
             const helperEmbedding = await this.generateEmbedding(helperText);
             const similarity = this.cosineSimilarity(requirementsEmbedding, helperEmbedding);
             return { helper, score: similarity };
         }));
-
+    
         // Sort by similarity score (highest first)
         return matches.sort((a, b) => b.score - a.score);
     }
