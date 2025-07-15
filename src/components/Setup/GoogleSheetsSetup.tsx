@@ -73,6 +73,7 @@ export const GoogleSheetsSetup: React.FC<GoogleSheetsSetupProps> = ({ onApiKeySe
             <li>• Helper Masterdata: <code>1ohjfGkv9NBGTOQ5hmGizWKOPck9xFaZghBepl02Xch0</code></li>
             <li>• Interview Questions: <code>1kDtQAwEkNW6PTjxOchWYuYKNOnGbwTIULrQsw9SnLmc</code></li>
             <li>• Value Content: <code>1Lj2nZKcVJMeITFX9StMXdNeXkOAtKZLOpb84X1HH0nE</code></li>
+            <li>• Customer Opportunities: <code>1T71f2W5ynyszcvJa4PuxX12e9uj7LGEN9an4IYGHXgE</code></li>
           </ul>
         </div>
 

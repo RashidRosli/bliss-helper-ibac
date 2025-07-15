@@ -71,6 +71,19 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
         updatedStatus[contentIndex].lastChecked = new Date();
       }
       
+      // Check Customer Opportunities sheet
+      try {
+        const opportunityData = await googleSheetsService.getOpportunityByContact('test');
+        const opportunityIndex = updatedStatus.findIndex(s => s.name === 'Customer Opportunities');
+        updatedStatus[opportunityIndex].connected = true; // If no error, sheet is accessible
+        updatedStatus[opportunityIndex].rowCount = 1; // We can't count rows without loading all data
+        updatedStatus[opportunityIndex].lastChecked = new Date();
+      } catch (err) {
+        const opportunityIndex = updatedStatus.findIndex(s => s.name === 'Customer Opportunities');
+        updatedStatus[opportunityIndex].connected = false;
+        updatedStatus[opportunityIndex].lastChecked = new Date();
+      }
+      
       setSheetsStatus(updatedStatus);
     } catch (err) {
       setError('Failed to check Google Sheets connection');

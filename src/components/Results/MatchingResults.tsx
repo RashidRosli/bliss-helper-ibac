@@ -12,17 +12,17 @@ import {
 } from 'lucide-react';
 
 interface MatchingResultsProps {
-  results: MatchResult[];
-  excludedBios: string[];
-  customerName: string;
-  customerContact: string;
+  results?: MatchResult[];
+  excludedBios?: string[];
+  customerName?: string;
+  customerContact?: string;
 }
 
 export const MatchingResults: React.FC<MatchingResultsProps> = ({
-  results,
-  excludedBios,
-  customerName,
-  customerContact,
+  results = [],
+  excludedBios = [],
+  customerName = '',
+  customerContact = '',
 }) => {
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -46,19 +46,19 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     }
   };
 
-  const getMatchSummary = (matches: any[]) => {
-    const fullMatches = matches.filter(m => m.status === 'match');
-    const partialMatches = matches.filter(m => m.status === 'partial');
-    const mismatches = matches.filter(m => m.status === 'mismatch');
+  const getMatchSummary = (matches: any[] = []) => {
+    const fullMatches = matches.filter(m => m?.status === 'match');
+    const partialMatches = matches.filter(m => m?.status === 'partial');
+    const mismatches = matches.filter(m => m?.status === 'mismatch');
 
     return {
-      full: fullMatches.map(m => m.criteria),
-      partial: partialMatches.map(m => m.criteria),
-      missed: mismatches.map(m => m.criteria),
+      full: fullMatches.map(m => m?.criteria ?? '—'),
+      partial: partialMatches.map(m => m?.criteria ?? '—'),
+      missed: mismatches.map(m => m?.criteria ?? '—'),
     };
   };
 
-  if (results.length === 0) {
+  if (!Array.isArray(results) || results.length === 0) {
     return (
       <div className="text-center py-12">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-md mx-auto">
@@ -73,7 +73,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
   }
 
   // Add a notice for low-score matches
-  const hasLowScoreMatches = results.some(r => r.score < 30);
+  const hasLowScoreMatches = results.some(r => typeof r?.score === 'number' && r.score < 30);
 
   return (
     <div className="space-y-6">
@@ -91,7 +91,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
       )}
 
       {/* Excluded bios section */}
-      {excludedBios.length > 0 && (
+      {Array.isArray(excludedBios) && excludedBios.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h3 className="font-semibold text-red-800 mb-2">❌ Excluded bios (previously sent):</h3>
           <ul className="text-red-700 space-y-1 list-disc pl-4">
@@ -106,14 +106,17 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
-            Top matches for {customerName} ({customerContact})
+            Top matches for {customerName || 'Customer'} ({customerContact || 'Contact'})
           </h2>
         </div>
 
         <div className="divide-y divide-gray-200">
-          {results.slice(0, 3).map((result, index) => {
-            const summary = getMatchSummary(result.matches);
-            
+          {(Array.isArray(results) ? results : []).slice(0, 3).map((result, index) => {
+            // Defensive: fallback to empty object if missing
+            const helper = result?.helper ?? {};
+            const matches = Array.isArray(result?.matches) ? result.matches : [];
+            const summary = getMatchSummary(matches);
+
             return (
               <div key={`helper-result-${index}`} className="p-6">
                 <div className="flex items-start justify-between mb-4">
@@ -123,17 +126,19 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">
-                        {result.helper.name}
+                        {helper.name || 'N/A'}
                       </h3>
                       <p className="text-sm text-gray-600">
-                        Helper Code: {result.helper.code || 'N/A'}
+                        Helper Code: {helper.code || 'N/A'}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="flex items-center space-x-2">
                       <Star className="h-4 w-4 text-yellow-500" />
-                      <span className="text-lg font-semibold text-gray-900">{result.score}%</span>
+                      <span className="text-lg font-semibold text-gray-900">
+                        {typeof result?.score === 'number' ? result.score : 0}%
+                      </span>
                     </div>
                     <p className="text-sm text-gray-600">Match Score</p>
                   </div>
@@ -144,19 +149,19 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div className="flex items-center space-x-2">
                       <Globe className="h-4 w-4 text-gray-500" />
-                      <span>{result.helper.nationality}</span>
+                      <span>{helper.nationality || '—'}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <User className="h-4 w-4 text-gray-500" />
-                      <span>{result.helper.age} years</span>
+                      <span>{helper.age ? `${helper.age} years` : '—'}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Calendar className="h-4 w-4 text-gray-500" />
-                      <span>{result.helper.experience} years exp</span>
+                      <span>{helper.experience ? `${helper.experience} years exp` : '—'}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <DollarSign className="h-4 w-4 text-gray-500" />
-                      <span>SGD {result.helper.salary}</span>
+                      <span>SGD {helper.salary || '—'}</span>
                     </div>
                   </div>
                 </div>
@@ -172,19 +177,20 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {result.matches.map((match, matchIndex) => (
+                      {(matches.length > 0 ? matches : [{ criteria: '—', status: 'mismatch', details: 'No data' }])
+                        .map((match, matchIndex) => (
                         <tr key={`match-row-${matchIndex}`} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                            {match.criteria}
+                            {match?.criteria ?? '—'}
                           </td>
                           <td className="px-4 py-2 text-center">
                             <div className="flex items-center justify-center space-x-1">
-                              {getStatusIcon(match.status)}
-                              <span className="text-sm">{getStatusSymbol(match.status)}</span>
+                              {getStatusIcon(match?.status)}
+                              <span className="text-sm">{getStatusSymbol(match?.status)}</span>
                             </div>
                           </td>
                           <td className="px-4 py-2 text-sm text-gray-700">
-                            {match.details}
+                            {match?.details ?? '—'}
                           </td>
                         </tr>
                       ))}
@@ -196,7 +202,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                   <h4 className="font-semibold text-blue-900 mb-2">Tailored Summary:</h4>
                   <div className="space-y-2 text-sm">
-                    <p><strong>% Match:</strong> {result.score}%</p>
+                    <p><strong>% Match:</strong> {typeof result?.score === 'number' ? result.score : 0}%</p>
                     
                     {summary.full.length > 0 && (
                       <p><strong>Strong matches:</strong> {summary.full.join(', ')}</p>

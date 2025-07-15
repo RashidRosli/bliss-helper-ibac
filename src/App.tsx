@@ -7,11 +7,13 @@ import { MatchingResults } from './components/Results/MatchingResults';
 import { InterviewQuestions } from './components/Results/InterviewQuestions';
 import { WhatsAppPitch } from './components/Results/WhatsAppPitch';
 import { Dashboard } from './components/Dashboard/Dashboard';
+import { ContactLookupForm } from './components/Forms/ContactLookupForm';
 import { MatchingService } from './services/matchingService';
 import { QuestionService } from './services/questionService';
 import { PitchService } from './services/pitchService';
 import { EmployerRequirements, MatchResult } from './types';
 import { GoogleSheetsConnection } from './components/Setup/GoogleSheetsConnection';
+import { GoogleSheetsService } from './services/googleSheetsService';
 
 function App() {
   const [activeTab, setActiveTab] = useState('matching');
@@ -27,6 +29,7 @@ function App() {
   const matchingService = new MatchingService();
   const questionService = new QuestionService();
   const pitchService = new PitchService();
+  const googleSheetsService = new GoogleSheetsService();
 
   useEffect(() => {
     // Check if API key is already stored
@@ -44,6 +47,21 @@ function App() {
     setIsApiKeySet(true);
     // Set environment variable for services
     (window as any).VITE_GOOGLE_SHEETS_API_KEY = key;
+  };
+
+  const handleContactFound = (requirements: EmployerRequirements) => {
+    setCurrentRequirements(requirements);
+    handleRequirementsSubmit(requirements);
+  };
+
+  const handleContactLookup = async (contactNumber: string) => {
+    try {
+      const opportunity = await googleSheetsService.getOpportunityByContact(contactNumber);
+      return opportunity;
+    } catch (error) {
+      console.error('Error looking up contact:', error);
+      return null;
+    }
   };
 
   const handleRequirementsSubmit = async (requirements: EmployerRequirements) => {
@@ -112,11 +130,16 @@ function App() {
       case 'matching':
         return (
           <div className="space-y-6">
+            <ContactLookupForm 
+              onContactFound={handleContactFound}
+              onLookupContact={handleContactLookup}
+            />
+            
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Employer Requirements</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Fill in the details below to find the best matching helpers from Google Sheets
+                  Use contact lookup above or fill in the details below to find the best matching helpers
                 </p>
               </div>
               <div className="p-6">
