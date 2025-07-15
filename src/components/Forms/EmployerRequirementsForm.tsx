@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EmployerRequirements } from '../../types';
-import { User, Home, Mail, DollarSign, Globe } from 'lucide-react'; // Removed unused Phone and Calendar
+import { User, Home, Mail, DollarSign, Globe } from 'lucide-react';
 
 interface EmployerRequirementsFormProps {
   onSubmit: (requirements: EmployerRequirements) => void;
@@ -11,36 +11,54 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
   onSubmit,
   initialData
 }) => {
+  // Set up blank template for all fields
+  const defaultFields: EmployerRequirements = {
+    customerName: '',
+    contact: '',
+    email: '',
+    referralSource: '',
+    employerRace: '',
+    jobscope: [],
+    firstTimeHelper: false,
+    childrenAges: [],
+    elderlyRelationship: '',
+    pets: [],
+    residenceType: '',
+    roomSharing: false,
+    startDate: '',
+    preferences: '',
+    budget: 0,
+    nationalityPreferences: [],
+    helperType: '',
+    agePreference: '',
+    englishRequirement: '',
+    heightPreference: '',
+    weightPreference: '',
+    experienceTags: [],
+    religionPreference: '',
+    educationRequirement: '',
+    maritalPreference: '',
+    helperChildrenAges: '',
+    focusArea: [],
+    excludedBios: []
+  };
+
   const [formData, setFormData] = useState<EmployerRequirements>({
-    customerName: initialData?.customerName || '',
-    contact: initialData?.contact || '',
-    email: initialData?.email || '',
-    referralSource: initialData?.referralSource || '',
-    employerRace: initialData?.employerRace || '',
-    jobscope: initialData?.jobscope || [],
-    firstTimeHelper: initialData?.firstTimeHelper || false,
-    childrenAges: initialData?.childrenAges || [],
-    elderlyRelationship: initialData?.elderlyRelationship || '',
-    pets: initialData?.pets || [],
-    residenceType: initialData?.residenceType || '',
-    roomSharing: initialData?.roomSharing || false,
-    startDate: initialData?.startDate || '',
-    preferences: initialData?.preferences || '',
-    budget: initialData?.budget || 0,
-    nationalityPreferences: initialData?.nationalityPreferences || [],
-    helperType: initialData?.helperType || '',
-    agePreference: initialData?.agePreference || '',
-    englishRequirement: initialData?.englishRequirement || '',
-    heightPreference: initialData?.heightPreference || '',
-    weightPreference: initialData?.weightPreference || '',
-    experienceTags: initialData?.experienceTags || [],
-    religionPreference: initialData?.religionPreference || '',
-    educationRequirement: initialData?.educationRequirement || '',
-    maritalPreference: initialData?.maritalPreference || '',
-    helperChildrenAges: initialData?.helperChildrenAges || '',
-    focusArea: initialData?.focusArea || [],
-    excludedBios: initialData?.excludedBios || []
+    ...defaultFields,
+    ...initialData
   });
+
+  // Auto-fill when initialData changes (e.g. after lookup)
+  useEffect(() => {
+    if (initialData) {
+      setFormData(prev => ({
+        ...prev,
+        ...initialData
+      }));
+    }
+    // If you want to fully reset the form on new data, use this line instead:
+    // if (initialData) setFormData({ ...defaultFields, ...initialData });
+  }, [initialData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +109,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           <User className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -105,7 +122,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               required
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Contact *
@@ -118,7 +134,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               required
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Email *
@@ -134,7 +149,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               />
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               How did they reach us
@@ -152,7 +166,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="other">Other</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Employer Race
@@ -179,7 +192,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           <Home className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-900">Job Requirements</h3>
         </div>
-
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -199,7 +211,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               ))}
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               First Time Hiring
@@ -234,7 +245,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           <User className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-900">Family Details</h3>
         </div>
-
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -254,7 +264,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               ))}
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Relationship of Elderly
@@ -270,7 +279,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="relatives">Other relatives</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Pets
@@ -289,7 +297,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               ))}
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Type of Residence
@@ -305,7 +312,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="landed">Landed Property</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Room Sharing
@@ -340,7 +346,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           <DollarSign className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-900">Budget & Timeline</h3>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -358,7 +363,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               required
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               When do you need the helper *
@@ -381,7 +385,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           <Globe className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-900">Helper Preferences</h3>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -401,7 +404,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               ))}
             </div>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Type of Helper
@@ -417,7 +419,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="experienced">Experienced</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Age
@@ -434,7 +435,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="experienced">Experienced (45+)</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper English Level
@@ -451,7 +451,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="Excellent">Excellent</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Height (cm)
@@ -464,7 +463,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Weight (kg)
@@ -477,7 +475,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Experience in Infant/Child/Elder Care
@@ -500,7 +497,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="infant,child,elder">All Care Types</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Religion
@@ -518,7 +514,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="Hindu">Hindu</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Education
@@ -535,7 +530,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="College">College</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Marital Status
@@ -552,7 +546,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               <option value="Widowed">Widowed</option>
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Prefer Helper Children Age
@@ -583,7 +576,6 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
               placeholder="Any specific requirements or preferences..."
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Excluded Helper Codes

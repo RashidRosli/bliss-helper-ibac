@@ -8,6 +8,7 @@ import { InterviewQuestions } from './components/Results/InterviewQuestions';
 import { WhatsAppPitch } from './components/Results/WhatsAppPitch';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { ContactLookupForm } from './components/Forms/ContactLookupForm';
+import { EmployerPage } from './components/Forms/EmployerPage';
 import { MatchingService } from './services/matchingService';
 import { QuestionService } from './services/questionService';
 import { PitchService } from './services/pitchService';

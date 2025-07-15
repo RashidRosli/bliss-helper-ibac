@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Phone, Loader2 } from 'lucide-react';
 
 interface ContactLookupFormProps {
@@ -13,6 +13,23 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   const [contactNumber, setContactNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  // Progress bar animates with actual lookup timing
+  useEffect(() => {
+    let timer: number;
+    if (isLoading) {
+      setProgress(0);
+      timer = setInterval(() => {
+        setProgress(prev => (prev < 80 ? prev + 2 : prev));
+      }, 40);
+    } else if (!isLoading && progress !== 0) {
+      setProgress(100);
+      setTimeout(() => setProgress(0), 350); // Slight delay for smooth finish
+    }
+    return () => clearInterval(timer);
+    // eslint-disable-next-line
+  }, [isLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +41,6 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
     try {
       const data = await onLookupContact(contactNumber.trim());
       if (data && data.error) {
-        // Handle the specific permission error
         setError(data.message);
       } else if (data) {
         onContactFound(data);
@@ -40,7 +56,17 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   };
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+    <div className="relative bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+      {/* Indeterminate Progress Bar */}
+      {progress > 0 && (
+        <div className="absolute top-0 left-0 w-full h-1 bg-blue-200 rounded-t overflow-hidden z-10">
+          <div
+            className="h-1 bg-blue-500 transition-all duration-200"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+
       <div className="flex items-center space-x-2 mb-4">
         <Phone className="h-5 w-5 text-blue-600" />
         <h3 className="text-lg font-semibold text-gray-900">Quick Customer Lookup</h3>
@@ -63,6 +89,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
               placeholder="e.g., +65 9123 4567 or 91234567"
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              disabled={isLoading}
             />
             <button
               type="submit"
