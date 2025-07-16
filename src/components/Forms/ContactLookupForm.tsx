@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Phone, Loader2 } from "lucide-react";
+import { EmployerRequirements } from "../../types";
 
-interface ContactLookupFormProps {
-  onContactFound: (data: any) => void;
+export interface ContactLookupFormProps {
+  onContactFound: (data: EmployerRequirements) => void;
   onLookupContact: (contact: string) => Promise<any>;
   isLoading?: boolean;
+  onBack?: () => void;
 }
 
 export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   onContactFound,
   onLookupContact,
   isLoading = false,
+  onBack,
 }) => {
   const [contactNumber, setContactNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +50,16 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
 
   return (
     <div className="relative bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mb-4 text-sm text-blue-500 hover:underline"
+          type="button"
+        >
+          &larr; Back
+        </button>
+      )}
+
       <div className="flex items-center space-x-2 mb-4">
         <Phone className="h-5 w-5 text-blue-600" />
         <h3 className="text-lg font-semibold text-gray-900">Quick Customer Lookup</h3>
@@ -103,3 +116,5 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
     </div>
   );
 };
+
+export default ContactLookupForm;

@@ -5,9 +5,10 @@ export interface EmployerRequirementsFormProps {
   initialData?: Partial<EmployerRequirements>;
   onSubmit: (requirements: EmployerRequirements) => void;
   isLoading?: boolean;
-  onCancel?: () => void;
+  onBack?: () => void;
 }
 
+// Helper for handling multi-value fields
 function parseMultiField(val: any): string[] {
   if (Array.isArray(val)) return val;
   if (typeof val === "string" && val.includes("\n"))
@@ -22,8 +23,9 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
   initialData,
   onSubmit,
   isLoading = false,
-  onCancel
+  onBack
 }) => {
+  // Default fields
   const defaultFields: EmployerRequirements = {
     customerName: "",
     contact: "",
@@ -55,7 +57,8 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     excludedBios: [],
   };
 
-  const [formData, setFormData] = useState<EmployerRequirements>({
+  // Correct initialization for array fields!
+  const [formData, setFormData] = useState<EmployerRequirements>(() => ({
     ...defaultFields,
     ...initialData,
     jobscope: parseMultiField(initialData?.jobscope),
@@ -65,9 +68,9 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     experienceTags: parseMultiField(initialData?.experienceTags),
     focusArea: parseMultiField(initialData?.focusArea),
     excludedBios: parseMultiField(initialData?.excludedBios),
-  });
+  }));
 
-  // When initialData changes, update form
+  // Reset form if initialData changes (for Contact Lookup integration)
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -85,7 +88,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     // eslint-disable-next-line
   }, [JSON.stringify(initialData)]);
 
-  // Helper for setting string fields
+  // String fields
   const handleInput = (key: keyof EmployerRequirements, value: any) => {
     setFormData(prev => ({
       ...prev,
@@ -93,7 +96,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     }));
   };
 
-  // Helper for textarea-multifields
+  // Multi-value fields (textarea)
   const handleTextarea = (key: keyof EmployerRequirements, value: string) => {
     setFormData(prev => ({
       ...prev,
@@ -101,7 +104,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     }));
   };
 
-  // Submit
+  // Submit form
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit(formData);
@@ -110,6 +113,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Client Name */}
         <div>
           <label className="block text-sm mb-1 font-medium">Name of Client *</label>
           <input
@@ -121,6 +125,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
             disabled={isLoading}
           />
         </div>
+        {/* Contact */}
         <div>
           <label className="block text-sm mb-1 font-medium">Contact *</label>
           <input
@@ -132,6 +137,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
             disabled={isLoading}
           />
         </div>
+        {/* Email */}
         <div>
           <label className="block text-sm mb-1 font-medium">Email</label>
           <input
@@ -142,6 +148,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
             disabled={isLoading}
           />
         </div>
+        {/* Referral Source */}
         <div>
           <label className="block text-sm mb-1 font-medium">Referral Source</label>
           <input
@@ -152,6 +159,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
             disabled={isLoading}
           />
         </div>
+        {/* Employer Race */}
         <div>
           <label className="block text-sm mb-1 font-medium">Employer Race</label>
           <input
@@ -162,6 +170,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
             disabled={isLoading}
           />
         </div>
+        {/* Residence Type */}
         <div>
           <label className="block text-sm mb-1 font-medium">Residence Type</label>
           <input
@@ -173,6 +182,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           />
         </div>
       </div>
+
       {/* Jobscope */}
       <div>
         <label className="block text-sm mb-1 font-medium">Jobscope (comma/newline)</label>
@@ -184,6 +194,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
+
       {/* Children Ages */}
       <div>
         <label className="block text-sm mb-1 font-medium">Children Ages (comma/newline)</label>
@@ -195,6 +206,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
+
       {/* Pets */}
       <div>
         <label className="block text-sm mb-1 font-medium">Pets (comma/newline)</label>
@@ -206,7 +218,8 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
-      {/* Room sharing, firstTimeHelper */}
+
+      {/* Room Sharing & First Time Helper */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm mb-1 font-medium">Room Sharing (yes/no)</label>
@@ -229,6 +242,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           />
         </div>
       </div>
+
       {/* Start Date */}
       <div>
         <label className="block text-sm mb-1 font-medium">Start Date</label>
@@ -240,7 +254,8 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
-      {/* Preferences */}
+
+      {/* Preferences / Remarks */}
       <div>
         <label className="block text-sm mb-1 font-medium">Preferences / Remarks</label>
         <textarea
@@ -251,6 +266,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
+
       {/* Budget */}
       <div>
         <label className="block text-sm mb-1 font-medium">Budget (SGD)</label>
@@ -262,6 +278,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
+
       {/* Nationality Preferences */}
       <div>
         <label className="block text-sm mb-1 font-medium">Nationality Preferences (comma/newline)</label>
@@ -273,7 +290,8 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           disabled={isLoading}
         />
       </div>
-      {/* Remaining fields (helperType, agePreference, etc.) */}
+
+      {/* Remaining fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm mb-1 font-medium">Helper Type</label>
@@ -398,14 +416,14 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
       </div>
 
       <div className="flex justify-end space-x-2 mt-4">
-        {onCancel && (
+        {onBack && (
           <button
             type="button"
             className="px-4 py-2 bg-gray-200 rounded-md"
-            onClick={onCancel}
+            onClick={onBack}
             disabled={isLoading}
           >
-            Cancel
+            Back
           </button>
         )}
         <button
@@ -419,3 +437,5 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     </form>
   );
 };
+
+export default EmployerRequirementsForm;
