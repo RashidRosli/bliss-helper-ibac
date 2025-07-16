@@ -16,7 +16,7 @@ export const Header: React.FC<HeaderProps> = ({ apiKey = '' }) => {
               <Users className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Bliss Helper</h1>
+              <h1 className="text-xl font-bold text-gray-900">ISAC Bliss Helper</h1>
               <p className="text-sm text-gray-600">Helper Matching System</p>
             </div>
           </div>

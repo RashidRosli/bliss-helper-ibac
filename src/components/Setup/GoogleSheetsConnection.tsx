@@ -22,16 +22,16 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const googleSheetsService = new GoogleSheetsService();
 
   const checkSheetConnections = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const updatedStatus = [...sheetsStatus];
-      
+
       // Check Helper Masterdata sheet
       try {
         const helperData = await googleSheetsService.getHelperData();
@@ -44,7 +44,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
         updatedStatus[helperIndex].connected = false;
         updatedStatus[helperIndex].lastChecked = new Date();
       }
-      
+
       // Check Questions sheet
       try {
         const questionsData = await googleSheetsService.getQuestions();
@@ -57,7 +57,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
         updatedStatus[questionsIndex].connected = false;
         updatedStatus[questionsIndex].lastChecked = new Date();
       }
-      
+
       // Check Value Content sheet
       try {
         const contentData = await googleSheetsService.getValueContent();
@@ -70,20 +70,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
         updatedStatus[contentIndex].connected = false;
         updatedStatus[contentIndex].lastChecked = new Date();
       }
-      
-      // Check Customer Opportunities sheet
-      try {
-        const opportunityData = await googleSheetsService.getOpportunityByContact('test');
-        const opportunityIndex = updatedStatus.findIndex(s => s.name === 'Customer Opportunities');
-        updatedStatus[opportunityIndex].connected = true; // If no error, sheet is accessible
-        updatedStatus[opportunityIndex].rowCount = 1; // We can't count rows without loading all data
-        updatedStatus[opportunityIndex].lastChecked = new Date();
-      } catch (err) {
-        const opportunityIndex = updatedStatus.findIndex(s => s.name === 'Customer Opportunities');
-        updatedStatus[opportunityIndex].connected = false;
-        updatedStatus[opportunityIndex].lastChecked = new Date();
-      }
-      
+
       setSheetsStatus(updatedStatus);
     } catch (err) {
       setError('Failed to check Google Sheets connection');
@@ -97,6 +84,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
     if (apiKey) {
       checkSheetConnections();
     }
+    // eslint-disable-next-line
   }, [apiKey]);
 
   return (
@@ -108,7 +96,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
             Verify connection to required Google Sheets for the application
           </p>
         </div>
-        <button 
+        <button
           onClick={checkSheetConnections}
           disabled={isLoading}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300"
@@ -117,7 +105,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
           <span>Refresh</span>
         </button>
       </div>
-      
+
       {error && (
         <div className="bg-red-50 border-l-4 border-red-500 p-4 m-4">
           <div className="flex items-center">
@@ -126,7 +114,7 @@ export const GoogleSheetsConnection: React.FC<GoogleSheetsConnectionProps> = ({ 
           </div>
         </div>
       )}
-      
+
       <div className="p-6">
         <div className="overflow-hidden border border-gray-200 rounded-lg">
           <table className="min-w-full divide-y divide-gray-200">

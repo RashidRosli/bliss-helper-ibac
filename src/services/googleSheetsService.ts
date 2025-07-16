@@ -4,7 +4,6 @@ interface GoogleSheetsConfig {
   helperSheetId: string;
   questionsSheetId: string;
   contentSheetId: string;
-  opportunitySheetId: string;
 }
 
 interface SheetData {
@@ -41,7 +40,6 @@ export class GoogleSheetsService {
     helperSheetId: '1ohjfGkv9NBGTOQ5hmGizWKOPck9xFaZghBepl02Xch0',
     questionsSheetId: '1kDtQAwEkNW6PTjxOchWYuYKNOnGbwTIULrQsw9SnLmc',
     contentSheetId: '1Lj2nZKcVJMeITFX9StMXdNeXkOAtKZLOpb84X1HH0nE',
-    opportunitySheetId: '1T71f2W5ynyszcvJa4PuxX12e9uj7LGEN9an4IYGHXgE',
   };
 
   private baseUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -140,25 +138,6 @@ export class GoogleSheetsService {
     );
   }
 
-  async getOpportunityByContact(contactNumber: string): Promise<any | null> {
-    try {
-      const data = await this.fetchSheetData(this.config.opportunitySheetId, 'Opportunity (Combine_CMD)!A:Z');
-      if (!Array.isArray(data) || data.length === 0) return null;
-      const [headers, ...rows] = data;
-      const contactIdx = headers.findIndex(h =>
-        h.toLowerCase().includes('contact') && !h.toLowerCase().includes('email')
-      );
-      if (contactIdx === -1) return null;
-      const cleanNumber = (val: string) => val.replace(/\D/g, '');
-      const match = rows.find(row => cleanNumber(row[contactIdx] || '') === cleanNumber(contactNumber));
-      if (!match) return null;
-      return this.mapRowToOpportunity(headers, match);
-    } catch (error) {
-      console.error(`Error fetching opportunity for contact ${contactNumber}:`, error);
-      return { error: true, message: error instanceof Error ? error.message : 'Unknown error occurred' };
-    }
-  }
-
   // --- Utilities ---
   private mapRowToHelper(headers: string[], row: string[]): Helper {
     const helper = {} as Helper;
@@ -197,53 +176,6 @@ export class GoogleSheetsService {
     return helper;
   }
 
-  private mapRowToOpportunity(headers: string[], row: string[]): any {
-    const opportunity: any = {};
-    const fieldMap: { [key: string]: string } = {
-      'CSO': 'cso',
-      'Name of client': 'customerName',
-      'Contact': 'contact',
-      'Email': 'email',
-      'How did they reach us': 'referralSource',
-      'Employer Race': 'employerRace',
-      'Jobscope': 'jobscope',
-      'First Time Hiring': 'firstTimeHelper',
-      'Age of kids': 'childrenAges',
-      'Relationship of Elderly': 'elderlyRelationship',
-      'Pets': 'pets',
-      'Type of residence': 'residenceType',
-      'Room sharing': 'roomSharing',
-      'When do you need the helper': 'startDate',
-      'Preference remarks': 'preferences',
-      'Salary and palcement budget': 'budget',
-      'Nationality preference': 'nationalityPreferences',
-      'Type of helper': 'helperType',
-      'Prefer helper age': 'agePreference',
-      'Prefer helper English Level': 'englishRequirement',
-      'Prefer Helper Height (cm)': 'heightPreference',
-      'Prefer Helper Weight (kg)': 'weightPreference',
-      'Prefer helper experince in infant/child/elder care': 'experienceTags',
-      'Prefer helper Religion': 'religionPreference',
-      'Prefer helper Education': 'educationRequirement',
-      'Prefer helper Marital Status': 'maritalPreference',
-      'Prefer helper Children age': 'helperChildrenAges'
-    };
-    headers.forEach((header, idx) => {
-      const value = row[idx] || '';
-      const fieldName = fieldMap[header] || header.toLowerCase().replace(/\s+/g, '_');
-      if (['jobscope', 'childrenAges', 'pets', 'nationalityPreferences', 'experienceTags'].includes(fieldName)) {
-        opportunity[fieldName] = value ? value.split(',').map((v: string) => v.trim()) : [];
-      } else if (['firstTimeHelper', 'roomSharing'].includes(fieldName)) {
-        opportunity[fieldName] = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
-      } else if (fieldName === 'budget') {
-        opportunity[fieldName] = parseInt(value) || 0;
-      } else {
-        opportunity[fieldName] = value;
-      }
-    });
-    return opportunity;
-  }
-
   private async getGenericSheetData(
     sheetId: string,
     range: string,
@@ -256,6 +188,7 @@ export class GoogleSheetsService {
     return rows.map(row => {
       const mapped: any = {};
       headers.forEach((header, idx) => {
+        if (!(header in fieldMap)) return;
         const value = row[idx] || '';
         const fieldName = fieldMap[header] || header.toLowerCase().replace(/\s+/g, '_');
         mapped[fieldName] = value;
