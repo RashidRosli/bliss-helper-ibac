@@ -41,7 +41,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
     roomSharing: false,
     startDate: "",
     preferences: "",
-    budget: 0,
+    budget: "",
     nationalityPreferences: [],
     helperType: "",
     agePreference: "",
@@ -271,9 +271,9 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
       <div>
         <label className="block text-sm mb-1 font-medium">Budget (SGD)</label>
         <input
-          type="number"
-          value={formData.budget}
-          onChange={e => handleInput("budget", Number(e.target.value))}
+          type="text"
+          value={formData.budget || ""}
+          onChange={e => handleInput("budget", e.target.value)}
           className="w-full px-3 py-2 border rounded-md"
           disabled={isLoading}
         />
@@ -407,7 +407,7 @@ export const EmployerRequirementsForm: React.FC<EmployerRequirementsFormProps> =
           <label className="block text-sm mb-1 font-medium">Excluded Bios (comma/newline)</label>
           <textarea
             rows={1}
-            value={Array.isArray(formData.excludedBios) ? formData.excludedBios.join('\n') : ""}
+            value={Array.isArray(formData.excludedBios) ? formData.excludedBios.join(', ') : ""}
             onChange={e => handleTextarea("excludedBios", e.target.value)}
             className="w-full px-3 py-2 border rounded-md"
             disabled={isLoading}

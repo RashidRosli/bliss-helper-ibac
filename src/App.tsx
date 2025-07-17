@@ -55,24 +55,26 @@ const App: React.FC = () => {
 
   // From form submit
   const handleFormSubmit = async (reqs: EmployerRequirements) => {
-    setRequirements({ ...reqs, excludedBios: [] });
-    setExcludedHelpers([]);
+    // Always ensure excludedBios is an array (never undefined)
+    const cleanReqs: EmployerRequirements = { ...reqs, excludedBios: reqs.excludedBios ?? [] };
+    setRequirements(cleanReqs);
+    setExcludedHelpers([]); // New search, start with no excluded helpers
     setStep("results");
     setIsLoading(true);
-    const foundResults = await matchingService.findMatches({ ...reqs, excludedBios: [] });
+    const foundResults = await matchingService.findMatches(cleanReqs);
     setResults(foundResults);
     setIsLoading(false);
   };
 
-  // Regenerate matches
+  // Regenerate matches (exclude last shown helpers as well as prior excludes)
   const handleRegenerate = useCallback(async () => {
     if (!requirements) return;
     const newExcludes = [
-      ...(requirements.excludedBios || []),
+      ...(requirements.excludedBios ?? []),
       ...lastSuggestedHelpers.map((h) => h.code),
     ];
-    const uniqueExcludes = Array.from(new Set(newExcludes));
-    const newReqs = { ...requirements, excludedBios: uniqueExcludes };
+    const uniqueExcludes = Array.from(new Set(newExcludes.filter(Boolean)));
+    const newReqs: EmployerRequirements = { ...requirements, excludedBios: uniqueExcludes };
     setRequirements(newReqs);
     setExcludedHelpers(uniqueExcludes);
     setIsLoading(true);
@@ -116,7 +118,6 @@ const App: React.FC = () => {
           ) : (
             <MatchingResults
               requirements={requirements}
-              excludedHelpers={excludedHelpers}
               onBack={() => setStep("form")}
               onRegenerate={handleRegenerate}
               onSuggestedHelpers={(helpers: Helper[]) => setLastSuggestedHelpers(helpers)}

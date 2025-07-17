@@ -1,137 +1,103 @@
-import { HfInference } from '@huggingface/inference';
-import { Helper, EmployerRequirements } from '../types';
+const API_BASE = "https://api.puter.com/v1";
+const MODEL = "gpt-3.5-turbo"; // Puter supports this endpoint
 
-// Initialize Hugging Face client
-const hf = new HfInference(import.meta.env.VITE_HUGGING_FACE_API_KEY);
-// Or with API Key:
-// const hf = new HfInference(process.env.HUGGING_FACE_API_KEY);
+// 1. Helper function to call Puter API for a single match score
+async function getMatchingScoreLLM(requirements: string, helperProfile: string): Promise<number> {
+    const prompt = `
+You are an expert helper-matching assistant for maid agencies. Given the employer requirements and a helper profile, rate the match from 0 (not suitable at all) to 10 (perfect match). 
+Only reply with a single number (0-10) and no explanation.
 
+Employer Requirements:
+${requirements}
+
+Helper Profile:
+${helperProfile}
+    `.trim();
+
+    const response = await fetch(`${API_BASE}/chat/completions`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            model: MODEL,
+            messages: [
+                { role: "system", content: "You rate helper profiles for matching employer requirements." },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.0
+        })
+    });
+    const data = await response.json();
+    // Try to extract number from response
+    const content = data?.choices?.[0]?.message?.content ?? "";
+    const score = parseInt(content.match(/\d+/)?.[0] ?? "0", 10);
+    return Math.max(0, Math.min(10, score));
+}
+
+// 2. Service class
 export class AIMatchingService {
-    // Convert helper data to text
-    private helperToText(helper: Helper): string {
+    // Convert helper object to a string summary for the LLM
+    private helperToText(helper: any): string {
         return `
-      Nationality: ${helper.nationality}.
-      Status: ${helper.status || 'Unknown'}.
-      Experience: ${helper.experience} years.
-      Age: ${helper.age}.
-      English: ${helper.english}.
-      Height: ${helper.height} cm.
-      Weight: ${helper.weight} kg.
-      Religion: ${helper.religion}.
-      Education: ${helper.education}.
-      Marital Status: ${helper.marital}.
-      Children: ${helper.children}.
-      Salary: SGD ${helper.salary}.
-      Availability: ${helper.availability}.
-      Job Scope: ${(helper.jobscope || []).join(', ')}.
-      Focus Areas: ${(helper.focus_area || []).join(', ')}.
-      Passport Ready: ${helper.passport_ready ? 'Yes' : 'No'}.
-      Transfer Ready: ${helper.transfer_ready ? 'Yes' : 'No'}.
-      Notes: ${helper.notes || ''}.
-    `;
+Name: ${helper.Name || ""}
+Nationality: ${helper.Nationality || ""}
+Type: ${helper.Type || ""}
+Ex-SG Experience: ${helper["Helper Exp."] || ""}
+Age: ${helper.Age || ""}
+English: ${helper.Language || ""}
+Height: ${helper["Height (cm)"] || ""}
+Weight: ${helper["Weight (Kg)"] || ""}
+Religion: ${helper.Religion || ""}
+Education: ${helper.Education || ""}
+Marital Status: ${helper["Marital Status"] || ""}
+Children: ${helper["No. of Child"] || ""}
+Salary: SGD ${helper.Salary || ""}
+Availability: ${helper.Availability || ""}
+Passport Status: ${helper["Passport Status"] || ""}
+Work Experience: ${helper["Work Experience"] || ""}
+Job Scope: ${(helper.jobscope || []).join(', ')}
+Notes: ${helper.notes || ""}
+        `.replace(/\s+\n/g, "\n").trim();
     }
 
-    // Convert employer requirements to text
-    private requirementsToText(requirements: EmployerRequirements): string {
+    // Convert employer requirements object to a string summary for the LLM
+    private requirementsToText(requirements: any): string {
         return `
-      Job Scope: ${(requirements.jobscope || []).join(', ')}.
-      First Time Helper: ${requirements.firstTimeHelper ? 'Yes' : 'No'}.
-      Children Ages: ${(requirements.childrenAges || []).join(', ')}.
-      Elderly Relationship: ${requirements.elderlyRelationship}.
-      Pets: ${(requirements.pets || []).join(', ')}.
-      Residence Type: ${requirements.residenceType}.
-      Room Sharing: ${requirements.roomSharing ? 'Yes' : 'No'}.
-      Start Date: ${requirements.startDate}.
-      Preferences: ${requirements.preferences}.
-      Budget: SGD ${requirements.budget}.
-      Nationality Preferences: ${(requirements.nationalityPreferences || []).join(', ')}.
-      Helper Type: ${requirements.helperType}.
-      Age Preference: ${requirements.agePreference}.
-      English Requirement: ${requirements.englishRequirement}.
-      Height Preference: ${requirements.heightPreference}.
-      Weight Preference: ${requirements.weightPreference}.
-      Experience Tags: ${(requirements.experienceTags || []).join(', ')}.
-      Religion Preference: ${requirements.religionPreference}.
-      Education Requirement: ${requirements.educationRequirement}.
-      Marital Preference: ${requirements.maritalPreference}.
-      Helper Children Ages: ${requirements.helperChildrenAges}.
-      Focus Areas: ${(requirements.focusArea || []).join(', ')}.
-      Employer Race: ${requirements.employerRace}.
-      Referral Source: ${requirements.referralSource}.
-      Excluded Bios: ${(requirements.excludedBios || []).join(', ')}.
-    `;
+Jobscope: ${requirements.Jobscope || ""}
+Preference remarks: ${requirements["Preference remarks"] || ""}
+Type of helper: ${requirements["Type of helper"] || ""}
+Age of kids: ${requirements["Age of kids"] || ""}
+Nationality preference: ${requirements["Nationality preference"] || ""}
+English Level: ${requirements["Prefer helper English Level"] || ""}
+Height: ${requirements["Prefer Helper Height (cm)"] || ""}
+Weight: ${requirements["Prefer Helper Weight (kg)"] || ""}
+Salary and placement budget: ${requirements["Salary and placement budget"] || ""}
+Religion: ${requirements["Prefer helper Religion"] || ""}
+Education: ${requirements["Prefer helper Education"] || ""}
+Marital Status: ${requirements["Prefer helper Marital Status"] || ""}
+Pets: ${requirements.Pets || ""}
+When do you need the helper: ${requirements["When do you need the helper"] || ""}
+        `.replace(/\s+\n/g, "\n").trim();
     }
 
-    // Generate embeddings using Hugging Face API
-    private async generateEmbedding(text: string): Promise<number[]> {
-        try {
-            const response = await hf.featureExtraction({
-                model: 'sentence-transformers/all-MiniLM-L6-v2',
-                inputs: text
-            });
+    // Main match function: gets scores for each helper
+    public async findMatches(requirements: any, helpers: any[]) {
+        const reqText = this.requirementsToText(requirements);
 
-            // Debugging: log the response structure
-            // console.log('featureExtraction response:', response);
-
-            if (Array.isArray(response)) {
-                // Handle [ [0.1, 0.2, ...] ] or [0.1, 0.2, ...]
-                if (Array.isArray(response[0])) {
-                    return response[0] as number[];
-                }
-                return response as number[];
-            }
-            if (typeof response === 'object' && response !== null && 'embeddings' in response) {
-                // Some versions might return { embeddings: [...] }
-                return (response as any).embeddings;
-            }
-            throw new Error('Unexpected response format from feature extraction');
-        } catch (error) {
-            console.error('Error generating embedding:', error);
-            throw error;
-        }
-    }
-
-    // Calculate cosine similarity
-    private cosineSimilarity(vecA: number[], vecB: number[]): number {
-        if (vecA.length !== vecB.length) {
-            throw new Error('Vectors must have the same length for cosine similarity calculation');
-        }
-
-        const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
-        const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
-        const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
-        if (magnitudeA === 0 || magnitudeB === 0) {
-            return 0;
-        }
-        return dotProduct / (magnitudeA * magnitudeB);
-    }
-
-    // Find matches based on semantic similarity
-    public async findMatches(
-        requirements: EmployerRequirements,
-        helpers: Helper[]
-    ): Promise<{ helper: Helper, score: number }[]> {
-        // Exclude empty helpers - using only properties that exist in the Helper interface
-        const nonEmptyHelpers = helpers.filter(h =>
-            h.name?.trim() || h.code?.trim() || h.availability?.trim() || 
-            (h.jobscope && h.jobscope.length > 0) || 
-            (h.focus_area && h.focus_area.length > 0) || 
-            h.notes?.trim()
+        const matches = await Promise.all(
+            helpers.map(async (helper) => {
+                const helperText = this.helperToText(helper);
+                const score = await getMatchingScoreLLM(reqText, helperText);
+                return {
+                    helper,
+                    score
+                };
+            })
         );
-        
-        // Generate embedding for employer requirements
-        const requirementsText = this.requirementsToText(requirements);
-        const requirementsEmbedding = await this.generateEmbedding(requirementsText);
-    
-        // Calculate similarity scores for each helper
-        const matches = await Promise.all(nonEmptyHelpers.map(async (helper) => {
-            const helperText = this.helperToText(helper);
-            const helperEmbedding = await this.generateEmbedding(helperText);
-            const similarity = this.cosineSimilarity(requirementsEmbedding, helperEmbedding);
-            return { helper, score: similarity };
-        }));
-    
-        // Sort by similarity score (highest first)
-        return matches.sort((a, b) => b.score - a.score);
+
+        // Sort by score descending (highest first)
+        matches.sort((a, b) => b.score - a.score);
+        return matches;
     }
 }

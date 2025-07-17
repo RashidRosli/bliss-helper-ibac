@@ -36,7 +36,7 @@ export interface EmployerRequirements {
   roomSharing: boolean;
   startDate: string;
   preferences: string;
-  budget: number;
+  budget: string;
   nationalityPreferences: string[]; // Changed from nationalityPreference (string) to array
   helperType: string;
   agePreference: string;

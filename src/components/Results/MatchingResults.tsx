@@ -13,9 +13,66 @@ import {
 } from "lucide-react";
 import type { MatchResult, Helper, EmployerRequirements } from "../../types";
 
+interface MatchCriterion {
+  name?: string;
+  criteria?: string;
+  status?: string;
+  reason?: string;
+  weight?: number;
+  [key: string]: any;
+}
+
+function getEmployerRequestedCriteria(employer: any, matchResult: any) {
+  const employerCriteriaFields = [
+    { key: "Nationality preference", rule: "Nationality" },
+    { key: "Prefer helper English Level", rule: "English Level" },
+    { key: "Prefer Helper Height (cm)", rule: "Height" },
+    { key: "Prefer Helper Weight (kg)", rule: "Weight" },
+    { key: "Salary and placement budget", rule: "Salary" },
+    { key: "Prefer helper Religion", rule: "Religion" },
+    { key: "Prefer helper Education", rule: "Education" },
+    { key: "Prefer helper Marital Status", rule: "Marital Status" },
+    { key: "No. of Off Day", rule: "Off Days" },
+    { key: "When do you need the helper", rule: "Passport Readiness" },
+  ];
+  const requested = employerCriteriaFields
+    .filter(({ key }) => employer[key] && String(employer[key]).trim() !== "")
+    .map(({ rule }) => rule);
+
+  const requestedCriteria = (matchResult.matches || [])
+    .filter(
+      (crit: MatchCriterion) =>
+        !!(crit.criteria || crit.name) &&
+        requested.includes(String(crit.criteria || crit.name))
+    )
+    .map((crit: MatchCriterion) => ({
+      ...crit,
+      name: crit.name || crit.criteria,
+    }));
+
+  requestedCriteria.sort((a: MatchCriterion, b: MatchCriterion) => {
+    if (a.status === "match" && b.status !== "match") return -1;
+    if (a.status !== "match" && b.status === "match") return 1;
+    return (b.weight || 1) - (a.weight || 1);
+  });
+
+  return requestedCriteria.slice(0, 3);
+}
+
+function normalizeExcludedBios(field: any): string[] {
+  if (!field) return [];
+  if (Array.isArray(field)) return field.map(String).map(s => s.trim()).filter(Boolean);
+  if (typeof field === "string") {
+    return field
+      .split(/[\n,]/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+  return [String(field).trim()];
+}
+
 interface MatchingResultsProps {
   requirements: EmployerRequirements;
-  excludedHelpers: string[];
   onRegenerate: () => void;
   onBack: () => void;
   onSuggestedHelpers: (helpers: Helper[]) => void;
@@ -24,21 +81,65 @@ interface MatchingResultsProps {
 
 export const MatchingResults: React.FC<MatchingResultsProps> = ({
   requirements,
-  excludedHelpers,
   onRegenerate,
   onBack,
   onSuggestedHelpers,
   results = [],
 }) => {
-  // Memoize helpers and only update parent if changed (to prevent infinite loop)
+  // Always read excluded bios from the form
+  const excludedBiosFromForm = normalizeExcludedBios(
+    (requirements as any).excludedBios
+  );
+
+  // Only show available helpers NOT in excluded bios
+  const availableResults = useMemo(
+    () =>
+      Array.isArray(results)
+        ? results.filter(r => {
+          const helper = r.helper || {};
+          const avail = helper.availability;
+          const code = helper.code || "";
+          return (
+            typeof avail === "string" &&
+            avail.trim().toLowerCase() === "yes" &&
+            !excludedBiosFromForm.includes(code)
+          );
+        })
+        : [],
+    [results, excludedBiosFromForm]
+  );
+
+  // Sort by score
+  const sortedResults = useMemo(
+    () => [...availableResults].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
+    [availableResults]
+  );
+
+  // Find excluded bios
+  const excludedHelperObjs = useMemo(() => {
+    if (!Array.isArray(results)) return [];
+    const fromResults = results.filter(r => {
+      const helper = r.helper || {};
+      const code = helper.code || "";
+      return excludedBiosFromForm.includes(code);
+    });
+    const foundCodes = fromResults.map(r => r.helper?.code);
+    const dummyObjs = excludedBiosFromForm
+      .filter(code => !foundCodes.includes(code))
+      .map(code => ({
+        helper: { code, name: "(Not in current results)" },
+      }));
+    return [...fromResults, ...dummyObjs];
+  }, [results, excludedBiosFromForm]);
+
+  // Memoize helpers for parent
   const helpers = useMemo(
-    () => (Array.isArray(results) ? results.map(r => r.helper).filter(Boolean) : []),
-    [results]
+    () => (Array.isArray(sortedResults) ? sortedResults.map(r => r.helper).filter(Boolean) : []),
+    [sortedResults]
   );
   const prevHelpersRef = useRef<string>("");
 
   useEffect(() => {
-    // Compare helper codes, only call if changed
     const prevCodes = prevHelpersRef.current;
     const currentCodes = helpers.map(h => h.code).join(",");
     if (prevCodes !== currentCodes) {
@@ -85,7 +186,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     };
   };
 
-  const customerName = requirements.customerName || "Customer";
+  const customerName = requirements.customerName || (requirements as any)["Name of client"] || "Customer";
   const customerContact = requirements.contact || "Contact";
 
   if (!Array.isArray(results) || results.length === 0) {
@@ -108,7 +209,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     );
   }
 
-  const hasLowScoreMatches = results.some((r) => typeof r?.score === "number" && r.score < 30);
+  const hasLowScoreMatches = sortedResults.some((r) => typeof r?.score === "number" && r.score < 30);
 
   return (
     <div className="space-y-6">
@@ -144,18 +245,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         </div>
       )}
 
-      {/* Excluded bios section */}
-      {Array.isArray(excludedHelpers) && excludedHelpers.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h3 className="font-semibold text-red-800 mb-2">❌ Excluded bios (previously suggested):</h3>
-          <ul className="text-red-700 space-y-1 list-disc pl-4">
-            {excludedHelpers.map((bio, idx) => (
-              <li key={`excluded-bio-${idx}`}>{bio}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* Results Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -165,10 +254,11 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         </div>
 
         <div className="divide-y divide-gray-200">
-          {results.slice(0, 3).map((result, index) => {
+          {sortedResults.slice(0, 3).map((result, index) => {
             const helper = result?.helper ?? {};
             const matches = Array.isArray(result?.matches) ? result.matches : [];
             const summary = getMatchSummary(matches);
+            const topRequestedCriteria = getEmployerRequestedCriteria(requirements, result);
 
             return (
               <div key={`helper-result-${index}`} className="p-6">
@@ -190,12 +280,27 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                     <div className="flex items-center space-x-2">
                       <Star className="h-4 w-4 text-yellow-500" />
                       <span className="text-lg font-semibold text-gray-900">
-                        {typeof result?.score === "number" ? (result.score * 100).toFixed(2) : "0"}%
+                        {typeof result?.score === "number" ? result.score.toFixed(0) : "0"}%
                       </span>
                     </div>
                     <p className="text-sm text-gray-600">Match Score</p>
                   </div>
                 </div>
+
+                {/* --- Top Employer-Requested Criteria --- */}
+                {topRequestedCriteria.length > 0 && (
+                  <div className="mb-4 p-4 rounded bg-blue-100 border">
+                    <div className="font-semibold mb-2 text-blue-900">Top Employer-Requested Criteria</div>
+                    <ul className="list-disc pl-6">
+                      {topRequestedCriteria.map((crit: MatchCriterion, i: number) => (
+                        <li key={i} className={crit.status === "match" ? "text-green-700" : "text-red-700"}>
+                          <b>{crit.name}</b>: {crit.status === "match" ? "Matched" : "Not Matched"}
+                          {crit.reason ? <span className="ml-2 text-gray-600">({crit.reason})</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Helper Overview */}
                 <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -206,11 +311,19 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                     </div>
                     <div className="flex items-center space-x-2">
                       <User className="h-4 w-4 text-gray-500" />
-                      <span>{helper.age ? `${helper.age} years` : "—"}</span>
+                      <span>
+                        {helper.age
+                          ? `${helper.age} years`
+                          : "—"}
+                      </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Calendar className="h-4 w-4 text-gray-500" />
-                      <span>{helper.experience ? `${helper.experience} years exp` : "—"}</span>
+                      <span>
+                        {helper.experience
+                          ? `${helper.experience} years exp`
+                          : "—"}
+                      </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <DollarSign className="h-4 w-4 text-gray-500" />
@@ -238,23 +351,23 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                     <tbody className="divide-y divide-gray-200">
                       {(matches.length > 0
                         ? matches
-                        : [{ criteria: "—", status: "mismatch", details: "No data" }]
-                      ).map((match, matchIndex) => (
-                        <tr key={`match-row-${matchIndex}`} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                            {match?.criteria ?? "—"}
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <div className="flex items-center justify-center space-x-1">
-                              {getStatusIcon(match?.status)}
-                              <span className="text-sm">{getStatusSymbol(match?.status)}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-700">
-                            {match?.details ?? "—"}
-                          </td>
-                        </tr>
-                      ))}
+                        : [{ criteria: "—", status: "mismatch", details: "No data" }])
+                        .map((match, matchIndex) => (
+                          <tr key={`match-row-${matchIndex}`} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                              {match?.criteria ?? "—"}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                {getStatusIcon(match?.status)}
+                                <span className="text-sm">{getStatusSymbol(match?.status)}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-700">
+                              {match?.details ?? "—"}
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -264,7 +377,8 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                   <h4 className="font-semibold text-blue-900 mb-2">Tailored Summary:</h4>
                   <div className="space-y-2 text-sm">
                     <p>
-                      <strong>% Match:</strong> {typeof result?.score === "number" ? result.score : 0}%
+                      <strong>% Match:</strong>{" "}
+                      {typeof result?.score === "number" ? result.score : 0}%
                     </p>
                     {summary.full.length > 0 && (
                       <p>
@@ -288,6 +402,39 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
           })}
         </div>
       </div>
+
+      {/* Excluded Bios Section */}
+      {excludedHelperObjs.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-8">
+          <h3 className="font-semibold text-red-800 mb-2">❌ Excluded Bios:</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {excludedHelperObjs.map((result, idx) => {
+              const helper = result?.helper || {};
+              return (
+                <div key={helper.code || idx} className="bg-white rounded shadow p-4 flex flex-col">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <User className="h-5 w-5 text-red-600" />
+                    <span className="font-semibold text-red-900">{helper.name || "N/A"}</span>
+                  </div>
+                  <div className="text-sm text-gray-600 mb-1">
+                    <span className="font-semibold">Code:</span> {helper.code || "N/A"}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    <span className="font-semibold">Nationality:</span> {(helper as any).nationality || "—"}
+                    {(helper as any).age && (
+                      <>
+                        {" "}
+                        | <span className="font-semibold">Age:</span> {(helper as any).age}
+                      </>
+                    )}
+                  </div>
+                  {/* Add more details if desired */}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

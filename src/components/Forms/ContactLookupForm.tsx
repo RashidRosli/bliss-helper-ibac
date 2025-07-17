@@ -17,6 +17,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
 }) => {
   const [contactNumber, setContactNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Autofocus input on mount
@@ -24,26 +25,37 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
     inputRef.current?.focus();
   }, []);
 
+  // Small success effect
+  useEffect(() => {
+    if (success) {
+      const timeout = setTimeout(() => setSuccess(false), 600);
+      return () => clearTimeout(timeout);
+    }
+  }, [success]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(false);
 
     if (!contactNumber.trim()) {
-      setError("Please enter a contact number.");
+      setError("Please enter a contact or reference.");
       return;
     }
 
     try {
+      inputRef.current?.blur();
       const data = await onLookupContact(contactNumber.trim());
       if (data && !data.error) {
         onContactFound(data);
+        setSuccess(true);
         setError(null);
       } else if (data && data.error) {
-        setError(data.message || "Customer not found. Try a different number.");
+        setError(data.message || "Customer not found. Try a different input.");
       } else {
-        setError("Customer not found. Please check number or fill form manually.");
+        setError("Customer not found. Please check or fill form manually.");
       }
-    } catch (err) {
+    } catch {
       setError("Error looking up contact. Please try again.");
     }
   };
@@ -66,24 +78,27 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
       </div>
 
       <p className="text-sm text-gray-600 mb-4">
-        Enter the customer's contact number to auto-fill their requirements.
+        Enter the customer's contact number, name, or reference to auto-fill their requirements.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Customer Contact Number *
+            Customer Contact, Name, or Reference *
           </label>
           <div className="flex space-x-2">
             <input
               ref={inputRef}
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel"
+              type="text"
               value={contactNumber}
               onChange={(e) => setContactNumber(e.target.value)}
-              placeholder="e.g., 91234567"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Customer contact, name, or reference"
+              aria-busy={isLoading}
+              placeholder="e.g., 91234567, John Doe, INV-1234"
+              className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${success
+                  ? "border-green-400 ring-green-300"
+                  : "border-gray-300 focus:ring-blue-500"
+                }`}
               required
               disabled={isLoading}
             />
@@ -110,7 +125,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
 
       <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
         <p className="text-sm text-blue-700">
-          <strong>Note:</strong> This will search Google Sheets for matching contact numbers and auto-fill all customer requirements.
+          <strong>Note:</strong> This will search Google Sheets for matching contact numbers, names, or references and auto-fill all customer requirements.
         </p>
       </div>
     </div>

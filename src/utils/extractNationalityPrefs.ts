@@ -24,7 +24,12 @@ export function extractNationalityPrefs(nationalityValue?: string, remarksValue?
         str.includes("indon only")
     )
         return ["Indonesia"];
-    if (str.includes("filipino only") || str.includes("pinoy only"))
+    if (
+        str.includes("filipino only") ||
+        str.includes("pinoy only") ||
+        str.includes("philipine only") ||
+        str.includes("phillipines only")
+    )
         return ["Philippines"];
 
     const result: string[] = [];
@@ -41,7 +46,12 @@ export function extractNationalityPrefs(nationalityValue?: string, remarksValue?
         str.includes("mym")
     )
         result.push("Myanmar");
-    if (str.includes("filipino") || str.includes("pinoy"))
+    if (
+        str.includes("filipino") ||
+        str.includes("pinoy") ||
+        str.includes("philip") ||
+        str.includes("phillipine")
+    )
         result.push("Philippines");
 
     return Array.from(new Set(result));
