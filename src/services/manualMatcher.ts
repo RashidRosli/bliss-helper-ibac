@@ -1,6 +1,7 @@
 import Fuse from 'fuse.js';
 import { extractNationalityPrefs } from '../utils/extractNationalityPrefs';
 import dayjs from "dayjs";
+import { jobscopeMatcher } from '../utils/jobscopeMatcher';
 
 // --- Fuzzy match helper ---
 function fuzzyIncludes(haystack: string, needle: string, threshold = 0.4) {
@@ -18,7 +19,6 @@ function fuzzyIncludes(haystack: string, needle: string, threshold = 0.4) {
 function fuzzyParseDate(str: string): dayjs.Dayjs | null {
     if (!str) return null;
     const lower = str.toLowerCase();
-
     if (lower.includes("anytime") || lower.includes("any time")) return null;
 
     const months = [
@@ -76,7 +76,6 @@ function fuzzyParseDate(str: string): dayjs.Dayjs | null {
             if (d.isAfter(dayjs())) return d;
         }
     }
-
     return null;
 }
 
@@ -85,9 +84,11 @@ export interface MatchCriterion {
     name: string;
     criteria: string;
     matched: boolean;
+    status?: string;
     value?: any;
     reason?: string;
     weight: number;
+    [key: string]: any;
 }
 
 export interface MatchReport {
@@ -98,13 +99,10 @@ export interface MatchReport {
 
 // --- Main Matching Function ---
 export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
-    // --- DEBUG: Show all keys and values for a helper row ---
-    console.log('Sample Helper Object:', helper);
-
     let score = 0;
     const criteria: MatchCriterion[] = [];
 
-    // 1. Nationality (case-insensitive, safe fallback)
+    // 1. Nationality
     const empNats = extractNationalityPrefs(
         employer["Nationality preference"],
         employer["Preference remarks"]
@@ -138,7 +136,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (exSG) score += 2;
 
-    // 3. English Level (with normalization)
+    // 3. English Level
     const levels = ['learning', 'basic', 'average', 'good', 'very good'];
     const requiredLevel = (employer["Prefer helper English Level"] || 'average').toLowerCase().trim();
     const rawLanguage = (helper["Language"] || '').toLowerCase().trim();
@@ -464,55 +462,26 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (passportMatch) score += passportWeight;
 
-    // 19. Jobscope Matching (fuzzy)
+    // 19. Jobscope Matching (integrated with jobscopeMatcher.ts)
     if (Array.isArray(employer.jobscope) && employer.jobscope.length > 0) {
-        const workExpRaw = ((helper["Work Experience"] || '') + ' ' + (helper["Skills"] || '')).toLowerCase();
-        const jobscopeText = employer.jobscope.join('\n').toLowerCase();
-
-        const JOBSCOPE_KEYWORDS = [
-            "take care newborn",
-            "take care child",
-            "night feeding",
-            "prepare breakfast",
-            "prepare school bag",
-            "household chores",
-            "cooking",
-            "grocery shopping",
-            "pet care",
-            "take care elderly",
-            "shower",
-            "change diaper",
-            "laundry",
-            "send child to school",
-            "fetch child from school"
-        ];
-
-        const requestedTasks = JOBSCOPE_KEYWORDS.filter((keyword: string) => fuzzyIncludes(jobscopeText, keyword));
-        let matchedTasks: string[] = [];
-        let missingTasks: string[] = [];
-
-        requestedTasks.forEach(task => {
-            if (fuzzyIncludes(workExpRaw, task)) {
-                matchedTasks.push(task);
-            } else {
-                missingTasks.push(task);
-            }
-        });
-
-        const matched = matchedTasks.length === requestedTasks.length && requestedTasks.length > 0;
+        const { matchedTasks, missingTasks } = jobscopeMatcher(employer.jobscope, helper);
+        const matched = matchedTasks.length === employer.jobscope.length && employer.jobscope.length > 0;
         criteria.push({
             name: "Jobscope Match",
             criteria: "Jobscope",
             matched,
+            status: matched
+                ? "match"
+                : (matchedTasks.length > 0 ? "partial" : "mismatch"),
             value: matchedTasks.length > 0
-                ? `${matchedTasks.length} of ${requestedTasks.length} requested tasks matched: ${matchedTasks.join(', ')}`
+                ? `${matchedTasks.length} of ${employer.jobscope.length} requested tasks matched: ${matchedTasks.join(', ')}`
                 : "No tasks matched",
             reason: matched
-                ? "All requested jobscope tasks are covered in helper's experience"
+                ? "All requested jobscope tasks are covered in helper's structured experience"
                 : missingTasks.length > 0
                     ? `Missing: ${missingTasks.join(', ')}`
                     : "No specific tasks requested",
-            weight: requestedTasks.length > 0 ? requestedTasks.length : 1
+            weight: employer.jobscope.length > 0 ? employer.jobscope.length : 1
         });
         if (matchedTasks.length > 0) score += matchedTasks.length;
     }
@@ -545,13 +514,13 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 : (prefsMissed.length ? `No preferences matched. Example missing: ${prefsMissed[0]}` : "No preference phrases given"),
             weight: 1,
         });
-        if (matched) score += prefsMatched.length * 1; // each match worth 1 pt
+        if (matched) score += prefsMatched.length * 1;
     }
 
     // --- DEBUG OUTPUTS ---
-    console.log('--- Matching Helper:', helper["Name"] || "[No Name]", '---');
-    console.log('Final Score:', score);
-    console.log('Criteria:', criteria);
+    // console.log('--- Matching Helper:', helper["Name"] || "[No Name]", '---');
+    // console.log('Final Score:', score);
+    // console.log('Criteria:', criteria);
 
     return {
         helper,

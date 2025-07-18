@@ -50,6 +50,7 @@ export interface EmployerRequirements {
   childrenAges: string[];
   elderlyRelationship: string;
   pets: string[];
+  petsRaw: string[];
   residenceType: string;
   roomSharing: boolean;
   startDate: string;
@@ -68,6 +69,19 @@ export interface EmployerRequirements {
   helperChildrenAges: string;
   focusArea: string[];
   excludedBios: string[];
+  jobscopeLines?: string[];
+  jobscopeFacts?: any;
+  adults?: number;
+  kids?: number;
+  babies?: number;
+  twins?: boolean;
+  babiesEDD?: number;
+  kidAges?: string[];
+  elderly?: number;
+  elderlyAges?: string[];
+  elderlyNeeds?: string[];
+  petTypes?: string[];
+  specialNeeds?: string[];
 }
 
 export interface InterviewQuestion {
