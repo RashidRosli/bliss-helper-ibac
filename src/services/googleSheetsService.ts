@@ -1,3 +1,5 @@
+// src/services/googleSheetsService.ts
+
 // --- Types ---
 interface GoogleSheetsConfig {
   apiKey: string;
@@ -10,29 +12,6 @@ interface SheetData {
   values: string[][];
 }
 
-interface Helper {
-  code: string;
-  name: string;
-  nationality: string;
-  age: number;
-  experience: number;
-  english: string;
-  height: number;
-  weight: number;
-  religion: string;
-  education: string;
-  marital: string;
-  children: string;
-  salary: number;
-  availability: string;
-  status: string;
-  jobscope: string[];
-  notes: string;
-  focus_area: string[];
-  passport_ready: boolean;
-  transfer_ready: boolean;
-}
-
 // --- Main Service ---
 export class GoogleSheetsService {
   private config: GoogleSheetsConfig = {
@@ -43,7 +22,7 @@ export class GoogleSheetsService {
   };
 
   private baseUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
-  private helperDataCache: Helper[] | null = null;
+  private helperDataCache: any[] | null = null;
   private lastFetchTime: number = 0;
   private cacheTTL = 5 * 60 * 1000; // 5 minutes
 
@@ -88,8 +67,17 @@ export class GoogleSheetsService {
     return [];
   }
 
+  // --- Mapping: Always Use Exact Sheet Headers ---
+  private mapRowToObject(headers: string[], row: string[]): Record<string, string> {
+    const obj: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      obj[header] = row[idx] || "";
+    });
+    return obj;
+  }
+
   // --- Data Fetch/Transform Methods ---
-  async getHelperData(): Promise<Helper[]> {
+  async getHelperData(): Promise<any[]> {
     const now = Date.now();
     if (this.helperDataCache && now - this.lastFetchTime < this.cacheTTL) {
       return this.helperDataCache;
@@ -97,13 +85,13 @@ export class GoogleSheetsService {
     const data = await this.fetchSheetData(this.config.helperSheetId, 'Helper Masterdata!A:Z');
     if (!Array.isArray(data) || data.length === 0) return [];
     const [headers, ...rows] = data;
-    this.helperDataCache = rows.map(row => this.mapRowToHelper(headers, row));
+    this.helperDataCache = rows.map(row => this.mapRowToObject(headers, row));
     this.lastFetchTime = now;
     return this.helperDataCache;
   }
 
   // Compatibility wrapper for legacy code
-  async loadHelpers(): Promise<Helper[]> {
+  async loadHelpers(): Promise<any[]> {
     return this.getHelperData();
   }
 
@@ -138,44 +126,7 @@ export class GoogleSheetsService {
     );
   }
 
-  // --- Utilities ---
-  private mapRowToHelper(headers: string[], row: string[]): Helper {
-    const helper = {} as Helper;
-    headers.forEach((header, idx) => {
-      const value = row[idx] || '';
-      switch (header.toLowerCase().trim()) {
-        case 'code': helper.code = value; break;
-        case 'name': helper.name = value; break;
-        case 'nationality': helper.nationality = value; break;
-        case 'age': helper.age = parseInt(value) || 0; break;
-        case 'helper exp.':
-        case 'experience': helper.experience = parseInt(value) || 0; break;
-        case 'language':
-        case 'english': helper.english = value; break;
-        case 'height (cm)':
-        case 'height': helper.height = parseInt(value) || 0; break;
-        case 'weight (kg)':
-        case 'weight': helper.weight = parseInt(value) || 0; break;
-        case 'religion': helper.religion = value; break;
-        case 'education': helper.education = value; break;
-        case 'marital':
-        case 'marital status': helper.marital = value; break;
-        case 'children': helper.children = value; break;
-        case 'salary': helper.salary = parseInt(value) || 0; break;
-        case 'availability': helper.availability = value; break;
-        case 'status': helper.status = value; break;
-        case 'work experience':
-        case 'notes': helper.notes = value; break;
-        // Add mapping for jobscope/focus_area/passport/transfer if present in sheet
-      }
-    });
-    helper.jobscope = helper.jobscope || [];
-    helper.focus_area = helper.focus_area || [];
-    helper.passport_ready = !!helper.passport_ready;
-    helper.transfer_ready = !!helper.transfer_ready;
-    return helper;
-  }
-
+  // --- Generic Sheet Loader for Other Content/Questions ---
   private async getGenericSheetData(
     sheetId: string,
     range: string,

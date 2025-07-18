@@ -13,6 +13,46 @@ import {
 } from "lucide-react";
 import type { MatchResult, Helper, EmployerRequirements } from "../../types";
 
+function parseExperiencePeriods(workExpText: string) {
+  const regex = /\(\s*(\d+)\s*Year[s]?(?:\s*(\d+)\s*Month[s]?)?\s*\)|\(\s*(\d+)\s*Month[s]?\s*\)|\(\s*(\d+)\s*day[s]?\s*\)/gi;
+  let totalMonths = 0;
+  let totalDays = 0;
+  let match;
+
+  while ((match = regex.exec(workExpText)) !== null) {
+    if (match[1]) { // Years (maybe months)
+      const years = parseInt(match[1], 10) || 0;
+      const months = parseInt(match[2], 10) || 0;
+      totalMonths += years * 12 + months;
+    } else if (match[3]) { // Only months
+      const months = parseInt(match[3], 10) || 0;
+      totalMonths += months;
+    } else if (match[4]) { // Only days
+      const days = parseInt(match[4], 10) || 0;
+      totalDays += days;
+    }
+  }
+  // Convert days to months
+  totalMonths += totalDays / 30;
+
+  return {
+    months: +(totalMonths).toFixed(1),
+    years: +(totalMonths / 12).toFixed(1)
+  };
+}
+
+function normalizeExcludedBios(field: any): string[] {
+  if (!field) return [];
+  if (Array.isArray(field)) return field.map(String).map(s => s.trim()).filter(Boolean);
+  if (typeof field === "string") {
+    return field
+      .split(/[\n,]/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+  return [String(field).trim()];
+}
+
 interface MatchCriterion {
   name?: string;
   criteria?: string;
@@ -59,18 +99,6 @@ function getEmployerRequestedCriteria(employer: any, matchResult: any) {
   return requestedCriteria.slice(0, 3);
 }
 
-function normalizeExcludedBios(field: any): string[] {
-  if (!field) return [];
-  if (Array.isArray(field)) return field.map(String).map(s => s.trim()).filter(Boolean);
-  if (typeof field === "string") {
-    return field
-      .split(/[\n,]/)
-      .map(s => s.trim())
-      .filter(Boolean);
-  }
-  return [String(field).trim()];
-}
-
 interface MatchingResultsProps {
   requirements: EmployerRequirements;
   excludedBios: string[];
@@ -88,7 +116,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
   onSuggestedHelpers,
   results = [],
 }) => {
-  // Always read excluded bios from the form
   const excludedBiosFromForm = normalizeExcludedBios(excludedBios);
 
   // Only show available helpers NOT in excluded bios
@@ -97,8 +124,8 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
       Array.isArray(results)
         ? results.filter(r => {
           const helper = r.helper || {};
-          const avail = helper.availability;
-          const code = helper.code || "";
+          const avail = helper["Availability"];
+          const code = helper["Code"] || "";
           return (
             typeof avail === "string" &&
             avail.trim().toLowerCase() === "yes" &&
@@ -120,14 +147,14 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     if (!Array.isArray(results)) return [];
     const fromResults = results.filter(r => {
       const helper = r.helper || {};
-      const code = helper.code || "";
+      const code = helper["Code"] || "";
       return excludedBiosFromForm.includes(code);
     });
-    const foundCodes = fromResults.map(r => r.helper?.code);
+    const foundCodes = fromResults.map(r => r.helper?.["Code"]);
     const dummyObjs = excludedBiosFromForm
       .filter(code => !foundCodes.includes(code))
       .map(code => ({
-        helper: { code, name: "(Not in current results)" },
+        helper: { "Code": code, "Name": "(Not in current results)" },
       }));
     return [...fromResults, ...dummyObjs];
   }, [results, excludedBiosFromForm]);
@@ -141,7 +168,7 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
 
   useEffect(() => {
     const prevCodes = prevHelpersRef.current;
-    const currentCodes = helpers.map(h => h.code).join(",");
+    const currentCodes = helpers.map(h => h["Code"]).join(",");
     if (prevCodes !== currentCodes) {
       onSuggestedHelpers(helpers);
       prevHelpersRef.current = currentCodes;
@@ -258,6 +285,8 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
             const helper = result?.helper ?? {};
             const matches = Array.isArray(result?.matches) ? result.matches : [];
             const summary = getMatchSummary(matches);
+            const workExpText = helper["Work Experience"] || "";
+            const experience = parseExperiencePeriods(workExpText);
             const topRequestedCriteria = getEmployerRequestedCriteria(requirements, result);
 
             return (
@@ -269,10 +298,10 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">
-                        {helper.name || "N/A"}
+                        {helper["Name"] || "N/A"}
                       </h3>
                       <p className="text-sm text-gray-600">
-                        Helper Code: {helper.code || "N/A"}
+                        Helper Code: {helper["Code"] || "N/A"}
                       </p>
                     </div>
                   </div>
@@ -307,29 +336,30 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div className="flex items-center space-x-2">
                       <Globe className="h-4 w-4 text-gray-500" />
-                      <span>{helper.nationality || "—"}</span>
+                      <span>{helper["Nationality"] || "—"}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <User className="h-4 w-4 text-gray-500" />
                       <span>
-                        {helper.age
-                          ? `${helper.age} years`
-                          : "—"}
+                        {helper["Age"] ? `${helper["Age"]} years` : "—"}
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Calendar className="h-4 w-4 text-gray-500" />
                       <span>
-                        {helper.experience
-                          ? `${helper.experience} years exp`
+                        {experience.years > 0
+                          ? `${experience.years} years`
                           : "—"}
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <DollarSign className="h-4 w-4 text-gray-500" />
-                      <span>SGD {helper.salary || "—"}</span>
+                      <span>SGD {helper["Salary"] || "—"}</span>
                     </div>
                   </div>
+                  {/* Optionally display work exp text for debug:
+                  <div className="text-xs mt-2 text-gray-500">{workExpText}</div>
+                  */}
                 </div>
 
                 {/* Matching Criteria Table */}
@@ -411,20 +441,20 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
             {excludedHelperObjs.map((result, idx) => {
               const helper = result?.helper || {};
               return (
-                <div key={helper.code || idx} className="bg-white rounded shadow p-4 flex flex-col">
+                <div key={helper["Code"] || idx} className="bg-white rounded shadow p-4 flex flex-col">
                   <div className="flex items-center space-x-3 mb-2">
                     <User className="h-5 w-5 text-red-600" />
-                    <span className="font-semibold text-red-900">{helper.name || "N/A"}</span>
+                    <span className="font-semibold text-red-900">{helper["Name"] || "N/A"}</span>
                   </div>
                   <div className="text-sm text-gray-600 mb-1">
-                    <span className="font-semibold">Code:</span> {helper.code || "N/A"}
+                    <span className="font-semibold">Code:</span> {helper["Code"] || "N/A"}
                   </div>
                   <div className="text-sm text-gray-600">
-                    <span className="font-semibold">Nationality:</span> {(helper as any).nationality || "—"}
-                    {(helper as any).age && (
+                    <span className="font-semibold">Nationality:</span> {(helper as any)["Nationality"] || "—"}
+                    {(helper as any)["Age"] && (
                       <>
                         {" "}
-                        | <span className="font-semibold">Age:</span> {(helper as any).age}
+                        | <span className="font-semibold">Age:</span> {(helper as any)["Age"]}
                       </>
                     )}
                   </div>

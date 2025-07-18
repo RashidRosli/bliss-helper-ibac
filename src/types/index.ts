@@ -1,24 +1,42 @@
 export interface Helper {
-  code: string;
-  name: string;
-  nationality: string;
-  age: number;
-  experience: number;
-  english: string;
-  height: number;
-  weight: number;
-  religion: string;
-  education: string;
-  marital: string;
-  children: string;
-  salary: number;
-  availability: string;
-  status: string;
-  jobscope: string[];
-  notes: string;
-  focus_area: string[];
-  passport_ready: boolean;
-  transfer_ready: boolean;
+  "Code": string;
+  "Name": string;
+  "Nationality": string;
+  "Age": string | number;
+  "Work Experience": string;
+  "Salary": string | number;
+  "Availability": string;
+  "Religion": string;
+  "Education": string;
+  "Marital Status": string;
+  "Weight (Kg)": string | number;
+  "Height (cm)": string | number;
+  "Passport Status": string;
+  "Passport Process Date"?: string;
+  "Deduction"?: string;
+  "Type"?: string;
+  "Helper Exp."?: string;
+  "Language"?: string;
+  "Infant Care Work Experience YES IF 0-6m"?: string;
+  "Infant Care Work Experience YES IF 7-12m"?: string;
+  "Childcare Work Experience YES IF 1-3y"?: string;
+  "Childcare Work Experience YES IF 4-6y"?: string;
+  "Childcare Work Experience YES IF 7-12y"?: string;
+  "Elderly Care Work Experience (Yes/No)"?: string;
+  "Care Giver/Nursing aid Cert (Yes/No)"?: string;
+  "Personal Infant Care Experience YES if have same work exp OR OWN CHILDREN <3YO"?: string;
+  "Personal Childcare Experience YES if have same work exp OR OWN CHILDREN <6YO"?: string;
+  "Personal Elderly Care Experience (Yes/No)"?: string;
+  "No. of Child"?: string;
+  "Age of Child"?: string;
+  "Eat Pork"?: string;
+  "Handle Pork"?: string;
+  "No. of Off Day"?: string;
+  "Recommendation Remarks"?: string;
+  "Internal Remarks"?: string;
+  "Additional Remarks"?: string;
+  // ... add more as needed!
+  [key: string]: any; // fallback
 }
 
 export interface EmployerRequirements {

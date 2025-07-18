@@ -98,21 +98,24 @@ export interface MatchReport {
 
 // --- Main Matching Function ---
 export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
+    // --- DEBUG: Show all keys and values for a helper row ---
+    console.log('Sample Helper Object:', helper);
+
     let score = 0;
     const criteria: MatchCriterion[] = [];
 
-    // 1. Nationality
+    // 1. Nationality (case-insensitive, safe fallback)
     const empNats = extractNationalityPrefs(
         employer["Nationality preference"],
         employer["Preference remarks"]
-    );
-    const helperNat = helper.Nationality;
+    ).map((n: string) => (n || '').toLowerCase().trim());
+    const helperNat = (helper["Nationality"] || '').toLowerCase().trim();
     const natMatch = empNats.length === 0 || empNats.includes(helperNat);
     criteria.push({
         name: "Nationality",
         criteria: "Nationality",
         matched: natMatch,
-        value: helperNat,
+        value: helper["Nationality"] || "",
         reason: natMatch
             ? "Nationality matches employer preference"
             : `Preferred: ${empNats.join(", ")} | Helper: ${helperNat}`,
@@ -122,29 +125,46 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
 
     // 2. Ex-SG
     const exSG =
-        (helper.Type || "").toLowerCase().includes("ex-sg") ||
-        (helper["Helper Exp."] || "").toLowerCase().includes("ex-sg");
+        ((helper["Type"] || "") + " " + (helper["Helper Exp."] || ""))
+            .toLowerCase()
+            .includes("ex-sg");
     criteria.push({
         name: "Ex-SG Experience",
         criteria: "Ex-SG Experience",
         matched: exSG,
-        value: helper.Type,
+        value: helper["Type"] || "",
         reason: exSG ? "Helper is Ex-SG" : "Not Ex-SG",
         weight: 2,
     });
     if (exSG) score += 2;
 
-    // 3. English Level
+    // 3. English Level (with normalization)
     const levels = ['learning', 'basic', 'average', 'good', 'very good'];
-    const requiredLevel = (employer["Prefer helper English Level"] || 'average').toLowerCase();
-    const helperLevel = (helper.Language || '').toLowerCase();
+    const requiredLevel = (employer["Prefer helper English Level"] || 'average').toLowerCase().trim();
+    const rawLanguage = (helper["Language"] || '').toLowerCase().trim();
+    let helperLevel = 'average';
+    if (levels.includes(rawLanguage)) {
+        helperLevel = rawLanguage;
+    } else if (rawLanguage.includes('very good')) {
+        helperLevel = 'very good';
+    } else if (rawLanguage.includes('good')) {
+        helperLevel = 'good';
+    } else if (rawLanguage.includes('average') || rawLanguage.includes('fair')) {
+        helperLevel = 'average';
+    } else if (rawLanguage.includes('basic') || rawLanguage.includes('poor')) {
+        helperLevel = 'basic';
+    } else if (rawLanguage.includes('learning')) {
+        helperLevel = 'learning';
+    }
     const engMatch = levels.indexOf(helperLevel) >= levels.indexOf(requiredLevel);
     criteria.push({
         name: "English Level",
         criteria: "English Level",
         matched: engMatch,
-        value: helper.Language,
-        reason: engMatch ? "English is sufficient" : `Employer wants: ${employer["Prefer helper English Level"]}, Helper: ${helper.Language}`,
+        value: helper["Language"] || "",
+        reason: engMatch
+            ? "English is sufficient"
+            : `Employer wants: ${employer["Prefer helper English Level"]}, Helper: ${helper["Language"]}`,
         weight: 1,
     });
     if (engMatch) score += 1;
@@ -158,8 +178,10 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         name: "Height",
         criteria: "Height",
         matched: heightMatch,
-        value: helper["Height (cm)"],
-        reason: heightMatch ? "Height above minimum" : `Employer wants >${minHeight}cm, Helper: ${helper["Height (cm)"]}`,
+        value: helper["Height (cm)"] || "",
+        reason: heightMatch
+            ? "Height above minimum"
+            : `Employer wants >${minHeight}cm, Helper: ${helper["Height (cm)"]}`,
         weight: 1,
     });
     if (heightMatch) score += 1;
@@ -186,7 +208,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             name: "Weight",
             criteria: "Weight",
             matched: weightMatch,
-            value: helper["Weight (Kg)"],
+            value: helper["Weight (Kg)"] || "",
             reason: weightMatch
                 ? "Weight within preferred range"
                 : `Employer wants ${employer["Prefer Helper Weight (kg)"]}, Helper: ${helper["Weight (Kg)"]}`,
@@ -218,7 +240,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             name: "Salary",
             criteria: "Salary",
             matched: salaryMatch,
-            value: helper["Salary"],
+            value: helper["Salary"] || "",
             reason: salaryMatch
                 ? "Salary within preferred range"
                 : `Employer wants ${employer["Salary and placement budget"]}, Helper: ${helper["Salary"]}`,
@@ -228,38 +250,38 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     }
 
     // 7. Childcare (7-12y)
-    const childExp = helper["Childcare Work Experience YES IF 7-12y"] === 'YES';
+    const childExp = ((helper["Childcare Work Experience YES IF 7-12y"] || '').toUpperCase() === 'YES');
     criteria.push({
         name: "Childcare (7-12y) Experience",
         criteria: "Childcare (7-12y) Experience",
         matched: childExp,
-        value: helper["Childcare Work Experience YES IF 7-12y"],
+        value: helper["Childcare Work Experience YES IF 7-12y"] || "",
         reason: childExp ? "Has experience with 7-12y" : "No experience",
         weight: 1,
     });
     if (childExp) score += 1;
 
     // 8. Infant Care
-    const infantCare = (helper["Infant Care Work Experience YES IF 0-6m"] === "YES") ||
-        (helper["Infant Care Work Experience YES IF 7-12m"] === "YES");
+    const infantCare = ((helper["Infant Care Work Experience YES IF 0-6m"] || '').toUpperCase() === "YES") ||
+        ((helper["Infant Care Work Experience YES IF 7-12m"] || '').toUpperCase() === "YES");
     criteria.push({
         name: "Infant Care Experience",
         criteria: "Infant Care Experience",
         matched: infantCare,
-        value: helper["Infant Care Work Experience YES IF 0-6m"] + " / " + helper["Infant Care Work Experience YES IF 7-12m"],
+        value: (helper["Infant Care Work Experience YES IF 0-6m"] || "") + " / " + (helper["Infant Care Work Experience YES IF 7-12m"] || ""),
         reason: infantCare ? "Has infant care experience" : "No infant care experience",
         weight: 1,
     });
     if (infantCare) score += 1;
 
     // 9. Elderly Care
-    const elderlyCare = helper["Elderly Care Work Experience (Yes/No)"] === "YES" ||
-        (helper["Personal Elderly Care Experience (Yes/No)"] || '').toLowerCase().includes("yes");
+    const elderlyCare = ((helper["Elderly Care Work Experience (Yes/No)"] || '').toUpperCase() === "YES") ||
+        ((helper["Personal Elderly Care Experience (Yes/No)"] || '').toUpperCase().includes("YES"));
     criteria.push({
         name: "Elderly Care Experience",
         criteria: "Elderly Care Experience",
         matched: elderlyCare,
-        value: helper["Elderly Care Work Experience (Yes/No)"],
+        value: helper["Elderly Care Work Experience (Yes/No)"] || "",
         reason: elderlyCare ? "Has elderly care experience" : "No elderly care experience",
         weight: 1,
     });
@@ -272,7 +294,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         name: "Cooking Experience",
         criteria: "Cooking Experience",
         matched: cookMatch,
-        value: helper["Work Experience"],
+        value: helper["Work Experience"] || "",
         reason: cookMatch ? "Has cooking experience" : "No cooking found in work experience",
         weight: 1,
     });
@@ -284,7 +306,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         name: "Household Chores Experience",
         criteria: "Household Chores Experience",
         matched: choresMatch,
-        value: helper["Work Experience"],
+        value: helper["Work Experience"] || "",
         reason: choresMatch ? "Has household chores experience" : "No household chores found",
         weight: 1,
     });
@@ -300,7 +322,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             name: "Religion",
             criteria: "Religion",
             matched: religionMatch,
-            value: helper["Religion"],
+            value: helper["Religion"] || "",
             reason: religionMatch ? "Religion matches" : `Employer: ${employer["Prefer helper Religion"]}, Helper: ${helper["Religion"]}`,
             weight: 1,
         });
@@ -317,7 +339,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             name: "Education",
             criteria: "Education",
             matched: eduMatch,
-            value: helper["Education"],
+            value: helper["Education"] || "",
             reason: eduMatch ? "Education matches" : `Employer: ${employer["Prefer helper Education"]}, Helper: ${helper["Education"]}`,
             weight: 1,
         });
@@ -334,7 +356,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             name: "Marital Status",
             criteria: "Marital Status",
             matched: maritalMatch,
-            value: helper["Marital Status"],
+            value: helper["Marital Status"] || "",
             reason: maritalMatch ? "Marital Status matches" : `Employer: ${employer["Prefer helper Marital Status"]}, Helper: ${helper["Marital Status"]}`,
             weight: 1,
         });
@@ -343,12 +365,12 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
 
     // 15. Pork handling
     if (employer["Eat Pork"] && employer["Eat Pork"] !== "all") {
-        const porkMatch = (helper["Eat Pork"] || "").toUpperCase() === employer["Eat Pork"].toUpperCase();
+        const porkMatch = ((helper["Eat Pork"] || "").toUpperCase() === employer["Eat Pork"].toUpperCase());
         criteria.push({
             name: "Eat Pork",
             criteria: "Eat Pork",
             matched: porkMatch,
-            value: helper["Eat Pork"],
+            value: helper["Eat Pork"] || "",
             reason: porkMatch ? "Matches pork eating preference" : `Employer: ${employer["Eat Pork"]}, Helper: ${helper["Eat Pork"]}`,
             weight: 1,
         });
@@ -357,12 +379,12 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
 
     // 16. Handle pork
     if (employer["Handle Pork"] && employer["Handle Pork"] !== "all") {
-        const handlePorkMatch = (helper["Handle Pork"] || "").toUpperCase() === employer["Handle Pork"].toUpperCase();
+        const handlePorkMatch = ((helper["Handle Pork"] || "").toUpperCase() === employer["Handle Pork"].toUpperCase());
         criteria.push({
             name: "Handle Pork",
             criteria: "Handle Pork",
             matched: handlePorkMatch,
-            value: helper["Handle Pork"],
+            value: helper["Handle Pork"] || "",
             reason: handlePorkMatch ? "Matches handle pork preference" : `Employer: ${employer["Handle Pork"]}, Helper: ${helper["Handle Pork"]}`,
             weight: 1,
         });
@@ -376,7 +398,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             name: "Off Days",
             criteria: "Off Days",
             matched: offDayMatch,
-            value: helper["No. of Off Day"],
+            value: helper["No. of Off Day"] || "",
             reason: offDayMatch ? "Matches off day requirement" : `Employer: ${employer["No. of Off Day"]}, Helper: ${helper["No. of Off Day"]}`,
             weight: 1,
         });
@@ -436,7 +458,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         name: "Passport Readiness",
         criteria: "Passport Readiness",
         matched: passportMatch,
-        value: helper["Passport Status"],
+        value: helper["Passport Status"] || "",
         reason: passportReason,
         weight: passportWeight,
     });
@@ -525,6 +547,11 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         });
         if (matched) score += prefsMatched.length * 1; // each match worth 1 pt
     }
+
+    // --- DEBUG OUTPUTS ---
+    console.log('--- Matching Helper:', helper["Name"] || "[No Name]", '---');
+    console.log('Final Score:', score);
+    console.log('Criteria:', criteria);
 
     return {
         helper,

@@ -36,7 +36,8 @@ export function extractNationalityPrefs(nationalityValue?: string, remarksValue?
     if (
         str.includes("indonesian") ||
         str.includes("indo") ||
-        str.includes("indon")
+        str.includes("indon")||
+        str.includes("idn")
     )
         result.push("Indonesia");
     if (
@@ -50,7 +51,8 @@ export function extractNationalityPrefs(nationalityValue?: string, remarksValue?
         str.includes("filipino") ||
         str.includes("pinoy") ||
         str.includes("philip") ||
-        str.includes("phillipine")
+        str.includes("phillipine") ||
+        str.includes("php")
     )
         result.push("Philippines");
 

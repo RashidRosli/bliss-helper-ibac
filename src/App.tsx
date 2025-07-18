@@ -69,7 +69,7 @@ const App: React.FC = () => {
     if (!requirements) return;
     const newExcludes = [
       ...(requirements.excludedBios ?? []),
-      ...lastSuggestedHelpers.slice(0, 3).map((h) => h.code),
+      ...lastSuggestedHelpers.slice(0, 3).map((h) => h["Code"]),
     ];
     const uniqueExcludes = Array.from(new Set(newExcludes.filter(Boolean)));
     const newReqs: EmployerRequirements = { ...requirements, excludedBios: uniqueExcludes };
