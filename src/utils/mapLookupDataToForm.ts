@@ -36,7 +36,7 @@ export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
             String(data["Room sharing"] || "").toLowerCase() === "true",
         startDate: data["When do you need the helper"] || "",
         preferences: data["Preference remarks"] || "",
-        budget: Number(data["Salary and palcement budget"] || 0),
+        budget: (data["Salary and palcement budget"] || "").toString(),
         nationalityPreferences: extractNationalityPrefs(
             data["Nationality preference"],
             data["Preference remarks"]

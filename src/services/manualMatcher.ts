@@ -1,7 +1,20 @@
+import Fuse from 'fuse.js';
 import { extractNationalityPrefs } from '../utils/extractNationalityPrefs';
 import dayjs from "dayjs";
 
-// Utility to get soonest relevant date from employer string
+// --- Fuzzy match helper ---
+function fuzzyIncludes(haystack: string, needle: string, threshold = 0.4) {
+    if (!haystack || !needle) return false;
+    const fuse = new Fuse([{ text: haystack }], {
+        keys: ['text'],
+        threshold: threshold,
+        minMatchCharLength: Math.max(needle.length - 2, 3),
+        includeScore: false,
+    });
+    return fuse.search(needle).length > 0;
+}
+
+// --- Parse Date ---
 function fuzzyParseDate(str: string): dayjs.Dayjs | null {
     if (!str) return null;
     const lower = str.toLowerCase();
@@ -67,6 +80,7 @@ function fuzzyParseDate(str: string): dayjs.Dayjs | null {
     return null;
 }
 
+// --- Types ---
 export interface MatchCriterion {
     name: string;
     criteria: string;
@@ -82,6 +96,7 @@ export interface MatchReport {
     criteria: MatchCriterion[];
 }
 
+// --- Main Matching Function ---
 export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     let score = 0;
     const criteria: MatchCriterion[] = [];
@@ -154,7 +169,6 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     if (employer["Prefer Helper Weight (kg)"]) {
         const employerWeight = employer["Prefer Helper Weight (kg)"];
         let minWeight = 0, maxWeight = 9999;
-
         const weightStr = employerWeight.toLowerCase().replace(/[^0-9\-]/g, '');
         if (employerWeight.toLowerCase().includes('above')) {
             minWeight = parseInt(weightStr) || 0;
@@ -427,6 +441,90 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         weight: passportWeight,
     });
     if (passportMatch) score += passportWeight;
+
+    // 19. Jobscope Matching (fuzzy)
+    if (Array.isArray(employer.jobscope) && employer.jobscope.length > 0) {
+        const workExpRaw = ((helper["Work Experience"] || '') + ' ' + (helper["Skills"] || '')).toLowerCase();
+        const jobscopeText = employer.jobscope.join('\n').toLowerCase();
+
+        const JOBSCOPE_KEYWORDS = [
+            "take care newborn",
+            "take care child",
+            "night feeding",
+            "prepare breakfast",
+            "prepare school bag",
+            "household chores",
+            "cooking",
+            "grocery shopping",
+            "pet care",
+            "take care elderly",
+            "shower",
+            "change diaper",
+            "laundry",
+            "send child to school",
+            "fetch child from school"
+        ];
+
+        const requestedTasks = JOBSCOPE_KEYWORDS.filter((keyword: string) => fuzzyIncludes(jobscopeText, keyword));
+        let matchedTasks: string[] = [];
+        let missingTasks: string[] = [];
+
+        requestedTasks.forEach(task => {
+            if (fuzzyIncludes(workExpRaw, task)) {
+                matchedTasks.push(task);
+            } else {
+                missingTasks.push(task);
+            }
+        });
+
+        const matched = matchedTasks.length === requestedTasks.length && requestedTasks.length > 0;
+        criteria.push({
+            name: "Jobscope Match",
+            criteria: "Jobscope",
+            matched,
+            value: matchedTasks.length > 0
+                ? `${matchedTasks.length} of ${requestedTasks.length} requested tasks matched: ${matchedTasks.join(', ')}`
+                : "No tasks matched",
+            reason: matched
+                ? "All requested jobscope tasks are covered in helper's experience"
+                : missingTasks.length > 0
+                    ? `Missing: ${missingTasks.join(', ')}`
+                    : "No specific tasks requested",
+            weight: requestedTasks.length > 0 ? requestedTasks.length : 1
+        });
+        if (matchedTasks.length > 0) score += matchedTasks.length;
+    }
+
+    // 20. Preference Remarks Matching (fuzzy)
+    if (employer.preferences && employer.preferences.length > 0) {
+        const prefs = employer.preferences.toLowerCase().split(/[\n,]/).map((s: string) => s.trim()).filter(Boolean);
+        const helperProfile = (
+            ((helper["Work Experience"] || '') + ' ' +
+                (helper["Skills"] || '') + ' ' +
+                (helper["Bio"] || '')).toLowerCase()
+        );
+        let prefsMatched: string[] = [];
+        let prefsMissed: string[] = [];
+        prefs.forEach((pref: string) => {
+            if (pref && fuzzyIncludes(helperProfile, pref)) {
+                prefsMatched.push(pref);
+            } else if (pref) {
+                prefsMissed.push(pref);
+            }
+        });
+        const matched = prefsMatched.length > 0;
+        criteria.push({
+            name: "Preferences Match",
+            criteria: "Preference Remarks",
+            matched,
+            value: prefsMatched.length ? prefsMatched.join(', ') : "",
+            reason: matched
+                ? `Matched preferences: ${prefsMatched.join(", ")}`
+                : (prefsMissed.length ? `No preferences matched. Example missing: ${prefsMissed[0]}` : "No preference phrases given"),
+            weight: 1,
+        });
+        if (matched) score += prefsMatched.length * 1; // each match worth 1 pt
+    }
 
     return {
         helper,

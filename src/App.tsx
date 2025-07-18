@@ -17,7 +17,6 @@ const App: React.FC = () => {
   const [step, setStep] = useState<Step>("employer");
   const [requirements, setRequirements] = useState<EmployerRequirements | null>(null);
   const [formData, setFormData] = useState<Partial<EmployerRequirements>>({});
-  const [excludedHelpers, setExcludedHelpers] = useState<string[]>([]);
   const [lastSuggestedHelpers, setLastSuggestedHelpers] = useState<Helper[]>([]);
   const [results, setResults] = useState<MatchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -58,7 +57,6 @@ const App: React.FC = () => {
     // Always ensure excludedBios is an array (never undefined)
     const cleanReqs: EmployerRequirements = { ...reqs, excludedBios: reqs.excludedBios ?? [] };
     setRequirements(cleanReqs);
-    setExcludedHelpers([]); // New search, start with no excluded helpers
     setStep("results");
     setIsLoading(true);
     const foundResults = await matchingService.findMatches(cleanReqs);
@@ -66,17 +64,16 @@ const App: React.FC = () => {
     setIsLoading(false);
   };
 
-  // Regenerate matches (exclude last shown helpers as well as prior excludes)
+  // Regenerate matches (exclude top 3 helpers that have been shown)
   const handleRegenerate = useCallback(async () => {
     if (!requirements) return;
     const newExcludes = [
       ...(requirements.excludedBios ?? []),
-      ...lastSuggestedHelpers.map((h) => h.code),
+      ...lastSuggestedHelpers.slice(0, 3).map((h) => h.code),
     ];
     const uniqueExcludes = Array.from(new Set(newExcludes.filter(Boolean)));
     const newReqs: EmployerRequirements = { ...requirements, excludedBios: uniqueExcludes };
     setRequirements(newReqs);
-    setExcludedHelpers(uniqueExcludes);
     setIsLoading(true);
     const foundResults = await matchingService.findMatches(newReqs);
     setResults(foundResults);
@@ -118,6 +115,7 @@ const App: React.FC = () => {
           ) : (
             <MatchingResults
               requirements={requirements}
+              excludedBios={requirements.excludedBios || []}
               onBack={() => setStep("form")}
               onRegenerate={handleRegenerate}
               onSuggestedHelpers={(helpers: Helper[]) => setLastSuggestedHelpers(helpers)}

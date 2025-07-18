@@ -73,6 +73,7 @@ function normalizeExcludedBios(field: any): string[] {
 
 interface MatchingResultsProps {
   requirements: EmployerRequirements;
+  excludedBios: string[];
   onRegenerate: () => void;
   onBack: () => void;
   onSuggestedHelpers: (helpers: Helper[]) => void;
@@ -81,15 +82,14 @@ interface MatchingResultsProps {
 
 export const MatchingResults: React.FC<MatchingResultsProps> = ({
   requirements,
+  excludedBios,
   onRegenerate,
   onBack,
   onSuggestedHelpers,
   results = [],
 }) => {
   // Always read excluded bios from the form
-  const excludedBiosFromForm = normalizeExcludedBios(
-    (requirements as any).excludedBios
-  );
+  const excludedBiosFromForm = normalizeExcludedBios(excludedBios);
 
   // Only show available helpers NOT in excluded bios
   const availableResults = useMemo(
