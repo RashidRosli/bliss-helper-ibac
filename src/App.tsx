@@ -8,9 +8,11 @@ import { MatchingService } from "./services/matchingService";
 import type { EmployerRequirements, Helper, MatchResult } from "./types";
 import { GoogleAppsScriptService } from "./services/GoogleAppsScriptService";
 import { mapLookupDataToForm } from "./utils/mapLookupDataToForm";
+import { GoogleSheetsService } from "./services/googleSheetsService";
 
 type Step = "employer" | "lookup" | "form" | "results";
 const gasService = new GoogleAppsScriptService();
+const sheetService = new GoogleSheetsService();
 const matchingService = new MatchingService();
 
 const App: React.FC = () => {
@@ -32,10 +34,11 @@ const App: React.FC = () => {
   }, []);
 
   // Lookup handler
-  const handleLookupContact = async (contact: string) => {
+  const handleLookupContact = async (phone: string, cso: string) => {
     setIsLoading(true);
     try {
-      const data = await gasService.getOpportunityByContact(contact);
+      // Example: If your GAS expects both
+      const data = await gasService.getOpportunityByContact(phone, cso);
       setIsLoading(false);
       return data;
     } catch {
@@ -43,6 +46,7 @@ const App: React.FC = () => {
       return { error: true, message: "Error looking up contact." };
     }
   };
+
 
   // After lookup found
   const handleContactFound = (rawData: any) => {
@@ -97,6 +101,7 @@ const App: React.FC = () => {
             onLookupContact={handleLookupContact}
             isLoading={isLoading}
             onBack={() => setStep("employer")}
+            sheetService={sheetService}
           />
         )}
 

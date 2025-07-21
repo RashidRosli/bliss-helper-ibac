@@ -15,6 +15,26 @@ function fuzzyIncludes(haystack: string, needle: string, threshold = 0.4) {
     return fuse.search(needle).length > 0;
 }
 
+// --- Extract above/below/age/height/weight from preference remarks ---
+function extractPrefNumbers(preferences: string) {
+    let out: { weight?: string; height?: string; age?: string } = {};
+    if (!preferences) return out;
+
+    // Above/below X kg
+    const weightMatch = preferences.match(/(above|below)\s*(\d{2,3})\s*kg/i);
+    if (weightMatch) out.weight = weightMatch[0];
+
+    // Above/below X cm
+    const heightMatch = preferences.match(/(above|below)\s*(\d{2,3})\s*cm/i);
+    if (heightMatch) out.height = heightMatch[0];
+
+    // Above/below X (age, must not be kg/cm)
+    const ageMatch = preferences.match(/(above|below)\s*(\d{2})\s*(?:yo|years? old)?\b(?!\s*kg|\s*cm)/i);
+    if (ageMatch) out.age = ageMatch[0];
+
+    return out;
+}
+
 // --- Parse Date ---
 function fuzzyParseDate(str: string): dayjs.Dayjs | null {
     if (!str) return null;
@@ -102,6 +122,18 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     let score = 0;
     const criteria: MatchCriterion[] = [];
 
+    // --- Normalize preference fields for fallback
+    const allPrefs = [
+        (employer["Preference remarks"] || ''),
+        (employer["preferences"] || '')
+    ].filter(Boolean).join('\n');
+    const prefNumbers = extractPrefNumbers(allPrefs);
+
+    // For matching: Use explicit field, else fallback to preference remark extraction
+    const agePrefRaw = employer["Prefer helper age"] || prefNumbers.age || "";
+    const weightPrefRaw = employer["Prefer Helper Weight (kg)"] || prefNumbers.weight || "";
+    const heightPrefRaw = employer["Prefer Helper Height (cm)"] || prefNumbers.height || "";
+
     // 1. Nationality
     const empNats = extractNationalityPrefs(
         employer["Nationality preference"],
@@ -168,26 +200,39 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     if (engMatch) score += 1;
 
     // 4. Height
-    const minHeight = parseInt((employer["Prefer Helper Height (cm)"] || '0').replace(/[^\d]/g, '')) || 0;
-    let helperHeight = parseInt(helper["Height (cm)"] || '0');
-    if (isNaN(helperHeight)) helperHeight = 0;
-    const heightMatch = helperHeight > minHeight;
-    criteria.push({
-        name: "Height",
-        criteria: "Height",
-        matched: heightMatch,
-        value: helper["Height (cm)"] || "",
-        reason: heightMatch
-            ? "Height above minimum"
-            : `Employer wants >${minHeight}cm, Helper: ${helper["Height (cm)"]}`,
-        weight: 1,
-    });
-    if (heightMatch) score += 1;
+    let heightMatch = true;
+    if (heightPrefRaw) {
+        let minHeight = 0, maxHeight = 999;
+        const heightStr = heightPrefRaw.toLowerCase().replace(/[^0-9\-]/g, '');
+        if (heightPrefRaw.toLowerCase().includes('above')) {
+            minHeight = parseInt(heightStr) || 0;
+        } else if (heightPrefRaw.toLowerCase().includes('below')) {
+            maxHeight = parseInt(heightStr) || 999;
+        } else if (heightPrefRaw.includes('-')) {
+            const parts = heightPrefRaw.split('-').map((s: string) => parseInt(s));
+            minHeight = parts[0] || 0;
+            maxHeight = parts[1] || 999;
+        }
+        let helperHeight = parseInt(helper["Height (cm)"] || '0');
+        if (isNaN(helperHeight)) helperHeight = 0;
+        heightMatch = helperHeight >= minHeight && helperHeight <= maxHeight;
+        criteria.push({
+            name: "Height",
+            criteria: "Height",
+            matched: heightMatch,
+            value: helper["Height (cm)"] || "",
+            reason: heightMatch
+                ? "Height within preferred range"
+                : `Employer wants ${heightPrefRaw}, Helper: ${helper["Height (cm)"]}`,
+            weight: 1,
+        });
+        if (heightMatch) score += 1;
+    }
 
     // 5. Weight
     let weightMatch = true;
-    if (employer["Prefer Helper Weight (kg)"]) {
-        const employerWeight = employer["Prefer Helper Weight (kg)"];
+    if (weightPrefRaw) {
+        const employerWeight = weightPrefRaw;
         let minWeight = 0, maxWeight = 9999;
         const weightStr = employerWeight.toLowerCase().replace(/[^0-9\-]/g, '');
         if (employerWeight.toLowerCase().includes('above')) {
@@ -209,13 +254,43 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: helper["Weight (Kg)"] || "",
             reason: weightMatch
                 ? "Weight within preferred range"
-                : `Employer wants ${employer["Prefer Helper Weight (kg)"]}, Helper: ${helper["Weight (Kg)"]}`,
+                : `Employer wants ${employerWeight}, Helper: ${helper["Weight (Kg)"]}`,
             weight: 1,
         });
         if (weightMatch) score += 1;
     }
 
-    // 6. Salary
+    // 6. Age
+    let ageMatch = true;
+    if (agePrefRaw && helper["Age"]) {
+        let minAge = 0, maxAge = 99;
+        const ageStr = agePrefRaw.toLowerCase().replace(/[^0-9\-]/g, '');
+        if (agePrefRaw.toLowerCase().includes('above')) {
+            minAge = parseInt(ageStr) || 0;
+        } else if (agePrefRaw.toLowerCase().includes('below')) {
+            maxAge = parseInt(ageStr) || 99;
+        } else if (agePrefRaw.includes('-')) {
+            const parts = agePrefRaw.split('-').map((s: string) => parseInt(s));
+            minAge = parts[0] || 0;
+            maxAge = parts[1] || 99;
+        }
+        let hAge = parseInt(helper["Age"] || '0');
+        if (isNaN(hAge)) hAge = 0;
+        ageMatch = hAge >= minAge && hAge <= maxAge;
+        criteria.push({
+            name: "Age",
+            criteria: "Age",
+            matched: ageMatch,
+            value: helper["Age"] || "",
+            reason: ageMatch
+                ? "Age within preferred range"
+                : `Employer wants ${agePrefRaw}, Helper: ${helper["Age"]}`,
+            weight: 1,
+        });
+        if (ageMatch) score += 1;
+    }
+
+    // 7. Salary
     let salaryMatch = true;
     if (employer["Salary and placement budget"]) {
         const employerSalary = employer["Salary and placement budget"].replace(/[^0-9\-]/g, '');
@@ -247,7 +322,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (salaryMatch) score += 1;
     }
 
-    // 7. Childcare (7-12y)
+    // 8. Childcare (7-12y)
     const childExp = ((helper["Childcare Work Experience YES IF 7-12y"] || '').toUpperCase() === 'YES');
     criteria.push({
         name: "Childcare (7-12y) Experience",
@@ -259,7 +334,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (childExp) score += 1;
 
-    // 8. Infant Care
+    // 9. Infant Care
     const infantCare = ((helper["Infant Care Work Experience YES IF 0-6m"] || '').toUpperCase() === "YES") ||
         ((helper["Infant Care Work Experience YES IF 7-12m"] || '').toUpperCase() === "YES");
     criteria.push({
@@ -272,7 +347,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (infantCare) score += 1;
 
-    // 9. Elderly Care
+    // 10. Elderly Care
     const elderlyCare = ((helper["Elderly Care Work Experience (Yes/No)"] || '').toUpperCase() === "YES") ||
         ((helper["Personal Elderly Care Experience (Yes/No)"] || '').toUpperCase().includes("YES"));
     criteria.push({
@@ -285,7 +360,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (elderlyCare) score += 1;
 
-    // 10. Cooking
+    // 11. Cooking
     const workExp = (helper["Work Experience"] || '').toLowerCase();
     const cookMatch = workExp.includes('cook');
     criteria.push({
@@ -298,7 +373,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (cookMatch) score += 1;
 
-    // 11. Household Chores
+    // 12. Household Chores
     const choresMatch = workExp.includes('household') || workExp.includes('clean');
     criteria.push({
         name: "Household Chores Experience",
@@ -310,7 +385,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (choresMatch) score += 1;
 
-    // 12. Religion
+    // 13. Religion
     const empReligion = (employer["Prefer helper Religion"] || "").toLowerCase();
     const helperReligion = (helper["Religion"] || "").toLowerCase();
     let religionMatch = true;
@@ -327,7 +402,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (religionMatch) score += 1;
     }
 
-    // 13. Education
+    // 14. Education
     const empEdu = (employer["Prefer helper Education"] || "").toLowerCase();
     const helperEdu = (helper["Education"] || "").toLowerCase();
     let eduMatch = true;
@@ -344,7 +419,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (eduMatch) score += 1;
     }
 
-    // 14. Marital Status
+    // 15. Marital Status
     const empMarital = (employer["Prefer helper Marital Status"] || "").toLowerCase();
     const helperMarital = (helper["Marital Status"] || "").toLowerCase();
     let maritalMatch = true;
@@ -361,7 +436,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (maritalMatch) score += 1;
     }
 
-    // 15. Pork handling
+    // 16. Pork handling
     if (employer["Eat Pork"] && employer["Eat Pork"] !== "all") {
         const porkMatch = ((helper["Eat Pork"] || "").toUpperCase() === employer["Eat Pork"].toUpperCase());
         criteria.push({
@@ -375,7 +450,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (porkMatch) score += 1;
     }
 
-    // 16. Handle pork
+    // 17. Handle pork
     if (employer["Handle Pork"] && employer["Handle Pork"] !== "all") {
         const handlePorkMatch = ((helper["Handle Pork"] || "").toUpperCase() === employer["Handle Pork"].toUpperCase());
         criteria.push({
@@ -389,7 +464,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (handlePorkMatch) score += 1;
     }
 
-    // 17. Off day
+    // 18. Off day
     if (employer["No. of Off Day"]) {
         const offDayMatch = (helper["No. of Off Day"] || "") === employer["No. of Off Day"];
         criteria.push({
@@ -403,7 +478,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (offDayMatch) score += 1;
     }
 
-    // 18. Passport Status vs Employer Timing Need
+    // 19. Passport Status vs Employer Timing Need
     const empWhen = (employer["When do you need the helper"] || "").toLowerCase().trim();
     const helperPassport = (helper["Passport Status"] || "").toLowerCase();
 
@@ -462,7 +537,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     });
     if (passportMatch) score += passportWeight;
 
-    // 19. Jobscope Matching (integrated with jobscopeMatcher.ts)
+    // 20. Jobscope Matching (integrated with jobscopeMatcher.ts)
     if (Array.isArray(employer.jobscope) && employer.jobscope.length > 0) {
         const { matchedTasks, missingTasks } = jobscopeMatcher(employer.jobscope, helper);
         const matched = matchedTasks.length === employer.jobscope.length && employer.jobscope.length > 0;
@@ -486,7 +561,7 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         if (matchedTasks.length > 0) score += matchedTasks.length;
     }
 
-    // 20. Preference Remarks Matching (fuzzy)
+    // 21. Preference Remarks Matching (fuzzy)
     if (employer.preferences && employer.preferences.length > 0) {
         const prefs = employer.preferences.toLowerCase().split(/[\n,]/).map((s: string) => s.trim()).filter(Boolean);
         const helperProfile = (
@@ -516,11 +591,6 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         });
         if (matched) score += prefsMatched.length * 1;
     }
-
-    // --- DEBUG OUTPUTS ---
-    // console.log('--- Matching Helper:', helper["Name"] || "[No Name]", '---');
-    // console.log('Final Score:', score);
-    // console.log('Criteria:', criteria);
 
     return {
         helper,

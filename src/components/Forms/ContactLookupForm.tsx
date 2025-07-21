@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Phone, Loader2 } from "lucide-react";
 import { EmployerRequirements } from "../../types";
+import { GoogleSheetsService } from "../../services/googleSheetsService";
 
 export interface ContactLookupFormProps {
   onContactFound: (data: EmployerRequirements) => void;
-  onLookupContact: (contact: string) => Promise<any>;
+  onLookupContact: (contact: string, cso: string) => Promise<any>;
   isLoading?: boolean;
   onBack?: () => void;
+  sheetService: GoogleSheetsService;
 }
 
 export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
@@ -14,16 +16,35 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   onLookupContact,
   isLoading = false,
   onBack,
+  sheetService,
 }) => {
   const [contactNumber, setContactNumber] = useState("");
+  const [cso, setCSO] = useState("");
+  const [csoList, setCSOList] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [loadingCSO, setLoadingCSO] = useState(false);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Autofocus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Load CSO list from Google Sheets on mount
+  useEffect(() => {
+    let mounted = true;
+    setLoadingCSO(true);
+    sheetService.getUniqueCSOList().then((names) => {
+      if (mounted) {
+        setCSOList(names);
+        setLoadingCSO(false);
+        if (names.length === 1) setCSO(names[0]);
+      }
+    }).catch(() => setLoadingCSO(false));
+    return () => { mounted = false; };
+  }, [sheetService]);
 
   // Small success effect
   useEffect(() => {
@@ -39,19 +60,23 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
     setSuccess(false);
 
     if (!contactNumber.trim()) {
-      setError("Please enter a contact or reference.");
+      setError("Please enter a customer phone number.");
+      return;
+    }
+    if (!cso) {
+      setError("Please select a CSO.");
       return;
     }
 
     try {
       inputRef.current?.blur();
-      const data = await onLookupContact(contactNumber.trim());
+      const data = await onLookupContact(contactNumber.trim(), cso);
       if (data && !data.error) {
         onContactFound(data);
         setSuccess(true);
         setError(null);
       } else if (data && data.error) {
-        setError(data.message || "Customer not found. Try a different input.");
+        setError(data.message || "Customer not found. Try a different phone number.");
       } else {
         setError("Customer not found. Please check or fill form manually.");
       }
@@ -78,13 +103,36 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
       </div>
 
       <p className="text-sm text-gray-600 mb-4">
-        Enter the customer's contact number, name, or reference to auto-fill their requirements.
+        Enter the customer's phone number and select the CSO.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* CSO Dropdown */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Customer Contact, Name, or Reference *
+            CSO <span className="text-red-500">*</span>
+          </label>
+          <div className="flex space-x-2">
+            <select
+              value={cso}
+              onChange={e => setCSO(e.target.value)}
+              className="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 border-gray-300 focus:ring-blue-500"
+              disabled={loadingCSO || isLoading}
+              required
+            >
+              <option value="">-- Select CSO --</option>
+              {csoList.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            {loadingCSO && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}
+          </div>
+        </div>
+
+        {/* Phone Number */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Customer Phone Number <span className="text-red-500">*</span>
           </label>
           <div className="flex space-x-2">
             <input
@@ -92,19 +140,20 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
               type="text"
               value={contactNumber}
               onChange={(e) => setContactNumber(e.target.value)}
-              aria-label="Customer contact, name, or reference"
+              aria-label="Customer phone number"
               aria-busy={isLoading}
-              placeholder="e.g., 91234567, John Doe, INV-1234"
+              placeholder="e.g., 91234567"
               className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${success
-                  ? "border-green-400 ring-green-300"
-                  : "border-gray-300 focus:ring-blue-500"
+                ? "border-green-400 ring-green-300"
+                : "border-gray-300 focus:ring-blue-500"
                 }`}
               required
               disabled={isLoading}
+              autoComplete="off"
             />
             <button
               type="submit"
-              disabled={isLoading || !contactNumber.trim()}
+              disabled={isLoading || !contactNumber.trim() || !cso}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors flex items-center space-x-2"
             >
               {isLoading ? (
@@ -125,7 +174,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
 
       <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
         <p className="text-sm text-blue-700">
-          <strong>Note:</strong> This will search Google Sheets for matching contact numbers, names, or references and auto-fill all customer requirements.
+          <strong>Note:</strong> CSO names are pulled from the Opportunity (Combine_CMD) Google Sheet.
         </p>
       </div>
     </div>

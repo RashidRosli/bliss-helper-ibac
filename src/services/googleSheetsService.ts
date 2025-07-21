@@ -147,4 +147,34 @@ export class GoogleSheetsService {
       return postProcess ? postProcess(mapped) : mapped;
     });
   }
+
+  // --- New: Get Unique CSO List from Sheet ---
+  async getUniqueCSOList(): Promise<string[]> {
+    // Sheet: 1T71f2W5ynyszcvJa4PuxX12e9uj7LGEN9an4IYGHXgE, Tab: Opportunity (Combine_CMD)
+    const data = await this.fetchSheetData(
+      "1T71f2W5ynyszcvJa4PuxX12e9uj7LGEN9an4IYGHXgE",
+      "'Opportunity (Combine_CMD)'!A:Z"
+    );
+    if (!Array.isArray(data) || data.length < 2) return [];
+    const [headers, ...rows] = data;
+
+    // Find CSO column (case-insensitive, not CSO ID)
+    let csoIdx = headers.findIndex(
+      h => h.toLowerCase().includes("cso") && !h.toLowerCase().includes("id")
+    );
+    if (csoIdx === -1) return [];
+
+    // Split, trim, and flatten all names
+    const allCSOs = rows
+      .map(row => row[csoIdx] || "")
+      .flatMap(val =>
+        String(val)
+          .split(/,|;|\/|\n/)
+          .map(name => name.trim())
+          .filter(Boolean)
+      );
+
+    // Return unique names (non-empty)
+    return Array.from(new Set(allCSOs)).filter(Boolean);
+  }
 }

@@ -149,6 +149,27 @@ function extractJobscopeFacts(lines: string[]) {
     return facts;
 }
 
+// --- Extract possible weight/height/age preferences from normalized preferences text ---
+function extractPreferenceNumbers(preferences: string) {
+    let out: { weight?: string; height?: string; age?: string } = {};
+    if (!preferences) return out;
+
+    // Find "above/below X kg"
+    const weightMatch = preferences.match(/(?:above|below)\s*(\d{2,3})\s*kg/i);
+    if (weightMatch) out.weight = `${weightMatch[0]}`;
+
+    // Find "above/below X cm"
+    const heightMatch = preferences.match(/(?:above|below)\s*(\d{2,3})\s*cm/i);
+    if (heightMatch) out.height = `${heightMatch[0]}`;
+
+    // Find "above/below X" (standalone, assume age if 2 digits, NOT followed by kg/cm)
+    // Prefer lines that look like "above 40", "below 40", "above 35 yo", "below 30yo"
+    const ageMatch = preferences.match(/(?:above|below)\s*(\d{2})\s*(?:yo|years? old)?\b(?!\s*kg|\s*cm)/i);
+    if (ageMatch) out.age = `${ageMatch[0]}`;
+
+    return out;
+}
+
 // --- Main: Smart Data Mapping ---
 export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
     // --- Smart Jobscope Handling ---
@@ -161,7 +182,6 @@ export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
     if (!jobscopeText && typeof data["Preference remarks"] === "string") {
         jobscopeText = data["Preference remarks"];
     }
-    // Break into lines/bullets for smarter parsing (NEW: do not split on comma!)
     const jobscopeLines = jobscopeText
         .split(/[\r\n•]+|(?:^|\s)[\-–]\s?/)
         .map(s => s.trim())
@@ -175,6 +195,15 @@ export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
         ])
     ];
     const jobscopeFacts = extractJobscopeFacts(jobscopeLines);
+
+    // --- Preferences: normalized to multiline string
+    const normalizedPreferences =
+        (data["Preference remarks"] && !data.preferences)
+            ? normalizePreferenceRemarks(data["Preference remarks"])
+            : (data.preferences || "");
+
+    // --- New: Extract above/below kg/cm/age
+    const prefNumbers = extractPreferenceNumbers(normalizedPreferences);
 
     return {
         customerName: data["Name of client"] || data.customerName || "",
@@ -219,20 +248,18 @@ export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
             String(data["Room sharing"] || "").toLowerCase() === "true",
         startDate: data["When do you need the helper"] || "",
         // --- PREFERENCES: autofill if empty, always normalized to multiline string ---
-        preferences:
-            (data["Preference remarks"] && !data.preferences)
-                ? normalizePreferenceRemarks(data["Preference remarks"])
-                : (data.preferences || ""),
+        preferences: normalizedPreferences,
         budget: (data["Salary and palcement budget"] || "").toString(),
         nationalityPreferences: extractNationalityPrefs(
             data["Nationality preference"],
             data["Preference remarks"]
         ),
         helperType: data["Type of helper"] || "",
-        agePreference: data["Prefer helper age"] || "",
+        // --- Autofill from preference lines if empty ---
+        agePreference: data["Prefer helper age"] || prefNumbers.age || "",
         englishRequirement: data["Prefer helper English Level"] || "",
-        heightPreference: data["Prefer Helper Height (cm)"] || "",
-        weightPreference: data["Prefer Helper Weight (kg)"] || "",
+        heightPreference: data["Prefer Helper Height (cm)"] || prefNumbers.height || "",
+        weightPreference: data["Prefer Helper Weight (kg)"] || prefNumbers.weight || "",
         experienceTags: data["Prefer helper experince in infant/child/elder care"]
             ? data["Prefer helper experince in infant/child/elder care"].split(",").map((s: string) => s.trim()).filter(Boolean)
             : [],

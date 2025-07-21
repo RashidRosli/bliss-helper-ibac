@@ -119,22 +119,102 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
   const excludedBiosFromForm = normalizeExcludedBios(excludedBios);
 
   // Only show available helpers NOT in excluded bios
-  const availableResults = useMemo(
-    () =>
-      Array.isArray(results)
-        ? results.filter(r => {
-          const helper = r.helper || {};
-          const avail = helper["Availability"];
-          const code = helper["Code"] || "";
-          return (
-            typeof avail === "string" &&
-            avail.trim().toLowerCase() === "yes" &&
-            !excludedBiosFromForm.includes(code)
-          );
-        })
-        : [],
-    [results, excludedBiosFromForm]
-  );
+  const availableResults = useMemo(() => {
+    if (!Array.isArray(results)) return [];
+    return results.filter(r => {
+      const helper = r.helper || {};
+      const avail = helper["Availability"];
+      const code = helper["Code"] || "";
+      if (typeof avail !== "string" || avail.trim().toLowerCase() !== "yes") return false;
+      if (excludedBiosFromForm.includes(code)) return false;
+
+      // 1. Nationality filter
+      if (requirements.nationalityPreferences && requirements.nationalityPreferences.length > 0) {
+        const hNat = (helper["Nationality"] || "").toLowerCase().trim();
+        const nats = requirements.nationalityPreferences.map((n: string) => n.toLowerCase().trim());
+        if (!nats.includes(hNat)) return false;
+      }
+
+      // 2. Age filter
+      if (requirements.agePreference && helper["Age"]) {
+        let minAge = 0, maxAge = 99;
+        const agePref = requirements.agePreference;
+        const ageStr = agePref.replace(/[^0-9\-]/g, '');
+        if (agePref.toLowerCase().includes('above')) minAge = parseInt(ageStr) || 0;
+        else if (agePref.toLowerCase().includes('below')) maxAge = parseInt(ageStr) || 99;
+        else if (agePref.includes('-')) {
+          const parts = agePref.split('-').map((s: string) => parseInt(s));
+          minAge = parts[0] || 0;
+          maxAge = parts[1] || 99;
+        }
+        const hAge = parseInt(String(helper["Age"]));
+        if (isNaN(hAge) || hAge < minAge || hAge > maxAge) return false;
+      }
+
+      // 3. Salary filter
+      if (requirements.budget && helper["Salary"]) {
+        const budget = requirements.budget.replace(/[^0-9\-]/g, '');
+        let minSalary = 0, maxSalary = 99999;
+        if (requirements.budget.toLowerCase().includes('below')) maxSalary = parseInt(budget) || 99999;
+        else if (requirements.budget.toLowerCase().includes('above')) minSalary = parseInt(budget) || 0;
+        else if (requirements.budget.includes('-')) {
+          const parts = requirements.budget.split('-').map((s: string) => parseInt(s));
+          minSalary = parts[0] || 0;
+          maxSalary = parts[1] || 99999;
+        } else if (budget) minSalary = maxSalary = parseInt(budget);
+        const hSalary = parseInt(String(helper["Salary"]));
+        if (isNaN(hSalary) || hSalary < minSalary || hSalary > maxSalary) return false;
+      }
+
+      // 4. Height filter
+      if (requirements.heightPreference && helper["Height (cm)"]) {
+        let minHeight = 0, maxHeight = 999;
+        const hPref = requirements.heightPreference;
+        const heightStr = hPref.replace(/[^0-9\-]/g, '');
+        if (hPref.toLowerCase().includes('above')) minHeight = parseInt(heightStr) || 0;
+        else if (hPref.toLowerCase().includes('below')) maxHeight = parseInt(heightStr) || 999;
+        else if (hPref.includes('-')) {
+          const parts = hPref.split('-').map((s: string) => parseInt(s));
+          minHeight = parts[0] || 0;
+          maxHeight = parts[1] || 999;
+        }
+        const hHeight = parseInt(String(helper["Height (cm)"]));
+        if (isNaN(hHeight) || hHeight < minHeight || hHeight > maxHeight) return false;
+      }
+
+      // 5. Weight filter
+      if (requirements.weightPreference && helper["Weight (Kg)"]) {
+        let minWeight = 0, maxWeight = 9999;
+        const wPref = requirements.weightPreference;
+        const weightStr = wPref.replace(/[^0-9\-]/g, '');
+        if (wPref.toLowerCase().includes('above')) minWeight = parseInt(weightStr) || 0;
+        else if (wPref.toLowerCase().includes('below')) maxWeight = parseInt(weightStr) || 9999;
+        else if (wPref.includes('-')) {
+          const parts = wPref.split('-').map((s: string) => parseInt(s));
+          minWeight = parts[0] || 0;
+          maxWeight = parts[1] || 9999;
+        }
+        const hWeight = parseInt(String(helper["Weight (Kg)"]));
+        if (isNaN(hWeight) || hWeight < minWeight || hWeight > maxWeight) return false;
+      }
+
+      // 6. Religion filter
+      if (requirements.religionPreference && helper["Religion"]) {
+        // Normalize values for safe comparison
+        const empRel = String(requirements.religionPreference).toLowerCase().trim();
+        const helperRel = String(helper["Religion"]).toLowerCase().trim();
+
+        // If employer requires "any" or "all", do not filter (pass)
+        if (empRel && empRel !== "any" && empRel !== "all" && empRel !== "") {
+          if (helperRel !== empRel) return false;
+        }
+      }
+
+      // Otherwise, pass!
+      return true;
+    });
+  }, [results, excludedBiosFromForm, requirements]);
+
 
   // Sort by score
   const sortedResults = useMemo(
