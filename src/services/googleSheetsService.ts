@@ -82,7 +82,7 @@ export class GoogleSheetsService {
     if (this.helperDataCache && now - this.lastFetchTime < this.cacheTTL) {
       return this.helperDataCache;
     }
-    const data = await this.fetchSheetData(this.config.helperSheetId, 'Helper Masterdata!A:Z');
+    const data = await this.fetchSheetData(this.config.helperSheetId, 'Helper Masterdata!A:AP');
     if (!Array.isArray(data) || data.length === 0) return [];
     const [headers, ...rows] = data;
     this.helperDataCache = rows.map(row => this.mapRowToObject(headers, row));

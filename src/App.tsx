@@ -5,10 +5,10 @@ import { ContactLookupForm } from "./components/Forms/ContactLookupForm";
 import { EmployerRequirementsForm } from "./components/Forms/EmployerRequirementsForm";
 import { MatchingResults } from "./components/Results/MatchingResults";
 import { MatchingService } from "./services/matchingService";
-import type { EmployerRequirements, Helper, MatchResult } from "./types";
 import { GoogleAppsScriptService } from "./services/GoogleAppsScriptService";
 import { mapLookupDataToForm } from "./utils/mapLookupDataToForm";
 import { GoogleSheetsService } from "./services/googleSheetsService";
+import type { EmployerRequirements, Helper, MatchResult } from "./types";
 
 type Step = "employer" | "lookup" | "form" | "results";
 const gasService = new GoogleAppsScriptService();
@@ -47,11 +47,10 @@ const App: React.FC = () => {
     }
   };
 
-
   // After lookup found
   const handleContactFound = (rawData: any) => {
     if (rawData && !rawData.error) {
-      setFormData(mapLookupDataToForm(rawData));
+      setFormData(mapLookupDataToForm(rawData[0]));
       setStep("form");
     }
   };

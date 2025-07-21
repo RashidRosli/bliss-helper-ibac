@@ -44,6 +44,7 @@ function normalizePreferenceRemarks(raw: any): string {
     return lines.join('\n');
 }
 
+// --- Detect tags in jobscope/remarks text ---
 function extractJobscopeTagsFromText(jobscopeText: string): string[] {
     const tagsFound = new Set<string>();
     const text = jobscopeText.toLowerCase();
@@ -54,7 +55,7 @@ function extractJobscopeTagsFromText(jobscopeText: string): string[] {
         }
     }
 
-    // Regex detection for special cases
+    // Regex detection for special cases (redundant for double coverage)
     if (/autism|adhd/.test(text)) tagsFound.add("child care");
     if (/elderly|grandma|ahma|ah gong|grandpa|dementia|stroke|parkinson/.test(text)) tagsFound.add("elderly care");
     if (/dog|cat|pet|rabbit|bird/.test(text)) tagsFound.add("pet care");

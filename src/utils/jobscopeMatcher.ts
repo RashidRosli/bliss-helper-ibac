@@ -1,18 +1,6 @@
-import Fuse from "fuse.js";
+import { fuzzyIncludesCombined } from "../services/manualMatcher"; // Adjust path if needed
 
-// --- Helper: Fuzzy string search ---
-function fuzzyIncludes(haystack: string, needle: string, threshold = 0.3) {
-  if (!haystack || !needle) return false;
-  const fuse = new Fuse([{ text: haystack }], {
-    keys: ['text'],
-    threshold: threshold,
-    minMatchCharLength: Math.max(needle.length - 2, 3),
-    includeScore: false,
-  });
-  return fuse.search(needle).length > 0;
-}
-
-// --- JOBSCOPE FIELD MAPPING ---
+// --- Centralized band mapping for structured jobscope ---
 const JOBSCOPE_FIELD_MAP = [
   {
     keywords: ["take care newborn", "infant care", "baby", "newborn"],
@@ -41,85 +29,102 @@ const JOBSCOPE_FIELD_MAP = [
   },
   {
     keywords: ["household chores", "housework", "general housework", "cleaning"],
-    columns: [
-      "Work Experience"
-    ]
+    columns: ["Work Experience"]
   },
   {
     keywords: ["cooking", "cook"],
-    columns: [
-      "Work Experience"
-    ]
+    columns: ["Work Experience"]
   },
   {
     keywords: ["caregiver", "nursing"],
-    columns: [
-      "Care Giver/Nursing aid Cert (Yes/No)"
-    ],
+    columns: ["Care Giver/Nursing aid Cert (Yes/No)"],
     yesValue: "YES"
   },
   {
     keywords: ["pet care", "dog care", "cat care", "pets", "pet"],
-    columns: [
-      "Work Experience"
-    ]
+    columns: ["Work Experience"]
   },
   {
     keywords: ["laundry", "washing clothes", "ironing"],
-    columns: [
-      "Work Experience"
-    ]
+    columns: ["Work Experience"]
   },
   {
     keywords: ["marketing", "grocery shopping"],
-    columns: [
-      "Work Experience"
-    ]
+    columns: ["Work Experience"]
   },
   {
     keywords: ["change diaper", "change diapers", "diaper"],
-    columns: [
-      "Work Experience"
-    ]
+    columns: ["Work Experience"]
   },
-  // Extend with more mappings if needed
+  // Add more synonyms/bahasa as needed!
 ];
 
 export function jobscopeMatcher(employerJobscope: string[], helper: any) {
   const matchedTasks: string[] = [];
   const missingTasks: string[] = [];
+  const reasons: Record<string, string> = {};
 
-  employerJobscope.forEach(task => {
+  // Helper profile for fallback
+  const helperProfile = (
+    (helper["Work Experience"] || "") +
+    " " +
+    (helper["Skills"] || "") +
+    " " +
+    (helper["Bio"] || "")
+  ).toLowerCase();
+
+  employerJobscope.forEach((task) => {
     let matched = false;
+    let reason = "";
+
     for (const mapping of JOBSCOPE_FIELD_MAP) {
-      if (mapping.keywords.some(keyword =>
-        fuzzyIncludes(task.toLowerCase(), keyword, 0.3) ||
-        fuzzyIncludes(keyword, task.toLowerCase(), 0.3)
-      )) {
+      // Fuzzy match employer jobscope phrase to mapping keywords
+      if (
+        mapping.keywords.some((keyword) =>
+          fuzzyIncludesCombined(task.toLowerCase(), keyword) ||
+          fuzzyIncludesCombined(keyword, task.toLowerCase())
+        )
+      ) {
         // Check structured fields
-        if (mapping.columns.some(col =>
-          helper[col] &&
-          (!mapping.yesValue || String(helper[col]).toUpperCase() === mapping.yesValue)
-        )) {
-          matched = true;
-          break;
-        }
-        // Or: fuzzy match in Work Experience text (if column exists)
         if (
-          mapping.columns.includes("Work Experience") &&
-          fuzzyIncludes(helper["Work Experience"]?.toLowerCase() || "", task.toLowerCase(), 0.3)
+          mapping.columns.some((col) =>
+            helper[col] &&
+            (
+              !mapping.yesValue ||
+              String(helper[col]).toUpperCase().includes(mapping.yesValue)
+            )
+          )
         ) {
           matched = true;
+          reason = `Matched via ${mapping.columns.join("/")} field(s)`;
+          break;
+        }
+
+        // Fuzzy match in Work Experience (if included)
+        if (
+          mapping.columns.includes("Work Experience") &&
+          fuzzyIncludesCombined(helper["Work Experience"]?.toLowerCase() || "", task.toLowerCase())
+        ) {
+          matched = true;
+          reason = "Matched by Work Experience text";
           break;
         }
       }
     }
+
+    // Fallback: Fuzzy search in all profile text
+    if (!matched && fuzzyIncludesCombined(helperProfile, task.toLowerCase())) {
+      matched = true;
+      reason = "Matched by helper profile text";
+    }
+
     if (matched) {
       matchedTasks.push(task);
+      reasons[task] = reason;
     } else {
       missingTasks.push(task);
     }
   });
 
-  return { matchedTasks, missingTasks };
+  return { matchedTasks, missingTasks, reasons };
 }
