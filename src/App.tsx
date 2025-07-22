@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Header } from "./components/Layout/Header";
-import EmployerPage from "./components/Forms/EmployerPage";
 import { ContactLookupForm } from "./components/Forms/ContactLookupForm";
 import { EmployerRequirementsForm } from "./components/Forms/EmployerRequirementsForm";
 import { MatchingResults } from "./components/Results/MatchingResults";
@@ -10,13 +9,13 @@ import { mapLookupDataToForm } from "./utils/mapLookupDataToForm";
 import { GoogleSheetsService } from "./services/googleSheetsService";
 import type { EmployerRequirements, Helper, MatchResult } from "./types";
 
-type Step = "employer" | "lookup" | "form" | "results";
+type Step = "lookup" | "form" | "results";
 const gasService = new GoogleAppsScriptService();
 const sheetService = new GoogleSheetsService();
 const matchingService = new MatchingService();
 
 const App: React.FC = () => {
-  const [step, setStep] = useState<Step>("employer");
+  const [step, setStep] = useState<Step>("lookup");
   const [requirements, setRequirements] = useState<EmployerRequirements | null>(null);
   const [formData, setFormData] = useState<Partial<EmployerRequirements>>({});
   const [lastSuggestedHelpers, setLastSuggestedHelpers] = useState<Helper[]>([]);
@@ -26,7 +25,7 @@ const App: React.FC = () => {
 
   // Load stored API key on first mount
   useEffect(() => {
-    const storedApiKey = localStorage.getItem('google_sheets_api_key');
+    const storedApiKey = localStorage.getItem("google_sheets_api_key");
     if (storedApiKey) {
       setApiKey(storedApiKey);
       (window as any).VITE_GOOGLE_SHEETS_API_KEY = storedApiKey;
@@ -37,7 +36,6 @@ const App: React.FC = () => {
   const handleLookupContact = async (phone: string, cso: string) => {
     setIsLoading(true);
     try {
-      // Example: If your GAS expects both
       const data = await gasService.getOpportunityByContact(phone, cso);
       setIsLoading(false);
       return data;
@@ -48,18 +46,15 @@ const App: React.FC = () => {
   };
 
   // After lookup found
-  const handleContactFound = (rawData: any) => {
-    if (!rawData || rawData.error) return;
-    // If result is array (from lookup), map first row; if object, map directly
+  const handleContactFound = async (rawData: EmployerRequirements) => {
+    if (!rawData) return;
     const row = Array.isArray(rawData) ? rawData[0] : rawData;
     setFormData(mapLookupDataToForm(row));
     setStep("form");
   };
 
-
-  // From form submit
+  // Form submit
   const handleFormSubmit = async (reqs: EmployerRequirements) => {
-    // Always ensure excludedBios is an array (never undefined)
     const cleanReqs: EmployerRequirements = { ...reqs, excludedBios: reqs.excludedBios ?? [] };
     setRequirements(cleanReqs);
     setStep("results");
@@ -89,19 +84,12 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header apiKey={apiKey} />
       <main className="flex-grow max-w-2xl mx-auto p-6">
-        {step === "employer" && (
-          <EmployerPage
-            onStartLookup={() => setStep("lookup")}
-            onStartForm={() => setStep("form")}
-          />
-        )}
-
         {step === "lookup" && (
           <ContactLookupForm
             onContactFound={handleContactFound}
             onLookupContact={handleLookupContact}
             isLoading={isLoading}
-            onBack={() => setStep("employer")}
+            onStartForm={() => setStep("form")}
             sheetService={sheetService}
           />
         )}
@@ -110,7 +98,7 @@ const App: React.FC = () => {
           <EmployerRequirementsForm
             initialData={formData}
             onSubmit={handleFormSubmit}
-            onBack={() => setStep("employer")}
+            onBack={() => setStep("lookup")}
             isLoading={isLoading}
           />
         )}
