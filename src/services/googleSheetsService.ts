@@ -177,4 +177,23 @@ export class GoogleSheetsService {
     // Return unique names (non-empty)
     return Array.from(new Set(allCSOs)).filter(Boolean);
   }
+
+  /**
+ * Get all rows from Opportunity (Combine_CMD) sheet where Status is "Active"
+ * Each row object includes at least: cso, clientName, contact, status
+ */
+  async getActiveOpportunities(): Promise<any[]> {
+    const data = await this.fetchSheetData(
+      "1T71f2W5ynyszcvJa4PuxX12e9uj7LGEN9an4IYGHXgE",
+      "'Opportunity (Combine_CMD)'!A:AM"
+    );
+    if (!Array.isArray(data) || data.length < 2) return [];
+    const [headers, ...rows] = data;
+    const rowObjs = rows.map(row => this.mapRowToObject(headers, row));
+    const actives = rowObjs.filter(row =>
+      (row.status || row.Status || "").toLowerCase() === "active"
+    );
+    return actives; // RETURN THE FULL ROW!
+  }
+
 }

@@ -49,11 +49,13 @@ const App: React.FC = () => {
 
   // After lookup found
   const handleContactFound = (rawData: any) => {
-    if (rawData && !rawData.error) {
-      setFormData(mapLookupDataToForm(rawData[0]));
-      setStep("form");
-    }
+    if (!rawData || rawData.error) return;
+    // If result is array (from lookup), map first row; if object, map directly
+    const row = Array.isArray(rawData) ? rawData[0] : rawData;
+    setFormData(mapLookupDataToForm(row));
+    setStep("form");
   };
+
 
   // From form submit
   const handleFormSubmit = async (reqs: EmployerRequirements) => {

@@ -33,29 +33,25 @@ const JOBSCOPE_TAGS: Record<string, string[]> = {
 };
 const TAGS_LIST = Object.entries(JOBSCOPE_TAGS);
 
-// --- Normalizes Preference Remarks to Multiline Bullet Format ---
+// --- Normalize remarks to bullet format ---
 function normalizePreferenceRemarks(raw: any): string {
     if (!raw || typeof raw !== "string") return "";
-    // Split by newline, dash, bullet, or line starting with whitespace+dash/•/–
     const lines = raw
         .split(/[\r\n]+|(?:^|\s)[\-•–]\s?/)
         .map(s => s.trim())
-        .filter(s => !!s && s !== "-"); // skip empty or lone dash
+        .filter(s => !!s && s !== "-");
     return lines.join('\n');
 }
 
-// --- Detect tags in jobscope/remarks text ---
+// --- Tag detection in jobscope/remarks text ---
 function extractJobscopeTagsFromText(jobscopeText: string): string[] {
     const tagsFound = new Set<string>();
-    const text = jobscopeText.toLowerCase();
-
+    const text = (jobscopeText || "").toLowerCase();
     for (const [tag, synonyms] of TAGS_LIST) {
         for (const syn of synonyms) {
             if (text.includes(syn)) tagsFound.add(tag);
         }
     }
-
-    // Regex detection for special cases (redundant for double coverage)
     if (/autism|adhd/.test(text)) tagsFound.add("child care");
     if (/elderly|grandma|ahma|ah gong|grandpa|dementia|stroke|parkinson/.test(text)) tagsFound.add("elderly care");
     if (/dog|cat|pet|rabbit|bird/.test(text)) tagsFound.add("pet care");
@@ -63,11 +59,10 @@ function extractJobscopeTagsFromText(jobscopeText: string): string[] {
     if (/household|clean|chores|housework|laundry|ironing|vacuum|mop|wash|spring cleaning|maintenance/.test(text)) tagsFound.add("household chores");
     if (/send|fetch|pick up|drop off|school|bus/.test(text)) tagsFound.add("send/fetch kids");
     if (/market|grocery|shopping|buy groceries/.test(text)) tagsFound.add("marketing");
-
     return Array.from(tagsFound);
 }
 
-// --- Extract structured numbers & entities from jobscope ---
+// --- Extract numbers/entities from jobscope lines ---
 function extractJobscopeFacts(lines: string[]) {
     let facts: any = {};
     let adults = 0, kids = 0, babies = 0, twins = false, elderly = 0, pets = 0;
@@ -150,68 +145,88 @@ function extractJobscopeFacts(lines: string[]) {
     return facts;
 }
 
-// --- Extract possible weight/height/age preferences from normalized preferences text ---
+// --- Extract numbers from preferences ---
 function extractPreferenceNumbers(preferences: string) {
     let out: { weight?: string; height?: string; age?: string } = {};
     if (!preferences) return out;
-
-    // Find "above/below X kg"
     const weightMatch = preferences.match(/(?:above|below)\s*(\d{2,3})\s*kg/i);
     if (weightMatch) out.weight = `${weightMatch[0]}`;
-
-    // Find "above/below X cm"
     const heightMatch = preferences.match(/(?:above|below)\s*(\d{2,3})\s*cm/i);
     if (heightMatch) out.height = `${heightMatch[0]}`;
-
-    // Find "above/below X" (standalone, assume age if 2 digits, NOT followed by kg/cm)
-    // Prefer lines that look like "above 40", "below 40", "above 35 yo", "below 30yo"
     const ageMatch = preferences.match(/(?:above|below)\s*(\d{2})\s*(?:yo|years? old)?\b(?!\s*kg|\s*cm)/i);
     if (ageMatch) out.age = `${ageMatch[0]}`;
-
     return out;
 }
 
-// --- Main: Smart Data Mapping ---
-export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
-    // --- Smart Jobscope Handling ---
-    let jobscopeText = "";
-    if (data.Jobscope) {
-        jobscopeText = typeof data.Jobscope === "string"
-            ? data.Jobscope
-            : Array.isArray(data.Jobscope) ? data.Jobscope.join("\n") : "";
-    }
-    if (!jobscopeText && typeof data["Preference remarks"] === "string") {
-        jobscopeText = data["Preference remarks"];
-    }
-    const jobscopeLines = jobscopeText
-        .split(/[\r\n•]+|(?:^|\s)[\-–]\s?/)
-        .map(s => s.trim())
-        .filter(Boolean);
+// --- Normalize sheet header for lookup ---
+function normalizeKey(key: string) {
+    return key
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, ""); // Remove all non-alphanumerics (spaces, _, newlines, etc)
+}
 
-    // Tag extraction (robust, finds all present tags)
+// --- Get field by list of possible names (resilient to headers) ---
+function getField(data: any, keys: string[], fallback: any = "") {
+    if (!data || typeof data !== "object") return fallback;
+    const normMap: Record<string, any> = {};
+    for (const k in data) {
+        if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+        normMap[normalizeKey(k)] = data[k];
+    }
+    for (const key of keys) {
+        const norm = normalizeKey(key);
+        if (normMap[norm] !== undefined && normMap[norm] !== null && normMap[norm] !== "") {
+            return normMap[norm];
+        }
+    }
+    return fallback;
+}
+
+const splitToArray = (value: any) =>
+    typeof value === "string"
+        ? value.split(/,|\r?\n/).map((s: string) => s.trim()).filter(Boolean)
+        : Array.isArray(value)
+            ? value
+            : [];
+
+// --- Main mapping function: robust, supports any sheet, partial data ---
+export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
+    if (!data || typeof data !== "object") return {};
+
+    let jobscopeText =
+        getField(data, ["Jobscope", "jobscope", "Job Scope", "Preference remarks"], "");
+    if (Array.isArray(jobscopeText)) jobscopeText = jobscopeText.join("\n");
+
+    const jobscopeLines = typeof jobscopeText === "string"
+        ? jobscopeText
+            .split(/[\r\n•]+|(?:^|\s)[\-–]\s?/)
+            .map(s => s.trim())
+            .filter(Boolean)
+        : [];
+
     const jobscopeTags: string[] = [
         ...new Set([
-            ...extractJobscopeTagsFromText(jobscopeText),
+            ...extractJobscopeTagsFromText(jobscopeText || ""),
             ...jobscopeLines.flatMap(line => extractJobscopeTagsFromText(line))
         ])
     ];
     const jobscopeFacts = extractJobscopeFacts(jobscopeLines);
 
-    // --- Preferences: normalized to multiline string
-    const normalizedPreferences =
-        (data["Preference remarks"] && !data.preferences)
-            ? normalizePreferenceRemarks(data["Preference remarks"])
-            : (data.preferences || "");
+    const normalizedPreferences = getField(
+        data,
+        ["Preference remarks", "preferences"],
+        ""
+    );
+    const normPrefText = normalizePreferenceRemarks(normalizedPreferences);
 
-    // --- New: Extract above/below kg/cm/age
-    const prefNumbers = extractPreferenceNumbers(normalizedPreferences);
+    const prefNumbers = extractPreferenceNumbers(normPrefText);
 
     return {
-        customerName: data["Name of client"] || data.customerName || "",
-        contact: data.Contact || data.contact || "",
-        email: data.Email || data.email || "",
-        referralSource: data["How did they reach us"] || data.referralSource || "",
-        employerRace: data["Employer Race"] || data.employerRace || "",
+        customerName: getField(data, ["Name of client", "customerName", "clientName", "name"]) || "",
+        contact: getField(data, ["Contact", "contact", "Phone", "phone", "hp"]) || "",
+        email: getField(data, ["Email", "email"]) || "",
+        referralSource: getField(data, ["How did they reach us", "referralSource"]) || "",
+        employerRace: getField(data, ["Employer Race", "employerRace"]) || "",
         jobscope: jobscopeTags,
         jobscopeLines,
         jobscopeFacts,
@@ -228,49 +243,35 @@ export function mapLookupDataToForm(data: any): Partial<EmployerRequirements> {
         petTypes: jobscopeFacts.petTypes,
         specialNeeds: jobscopeFacts.specialNeeds,
         firstTimeHelper:
-            data["First Time Hiring"] === "yes" ||
-            data.firstTimeHelper === true ||
-            String(data["First Time Hiring"] || "").toLowerCase() === "true",
-        childrenAges: data["Age of kids"]
-            ? (typeof data["Age of kids"] === "string"
-                ? data["Age of kids"].split(",").map((s: string) => s.trim()).filter(Boolean)
-                : [])
-            : [],
-        elderlyRelationship: data["Relationship of Elderly"] || "",
-        petsRaw: data.Pets
-            ? (typeof data.Pets === "string"
-                ? data.Pets.replace(/\r?\n/g, ',').split(",").map((s: string) => s.trim()).filter(Boolean)
-                : [])
-            : [],
-        residenceType: data["Type of residence"] || "",
+            getField(data, ["First Time Hiring", "firstTimeHelper"]) === "yes" ||
+            getField(data, ["First Time Hiring", "firstTimeHelper"]) === true ||
+            String(getField(data, ["First Time Hiring", "firstTimeHelper"]) || "").toLowerCase() === "true",
+        childrenAges: splitToArray(getField(data, ["Age of kids", "childrenAges"])),
+        elderlyRelationship: getField(data, ["Relationship of Elderly", "elderlyRelationship"]) || "",
+        petsRaw: splitToArray(getField(data, ["Pets", "petsRaw"])),
+        residenceType: getField(data, ["Type of residence", "residenceType"]) || "",
         roomSharing:
-            data["Room sharing"] === "yes" ||
-            data.roomSharing === true ||
-            String(data["Room sharing"] || "").toLowerCase() === "true",
-        startDate: data["When do you need the helper"] || "",
-        // --- PREFERENCES: autofill if empty, always normalized to multiline string ---
-        preferences: normalizedPreferences,
-        budget: (data["Salary and palcement budget"] || "").toString(),
+            getField(data, ["Room sharing", "roomSharing"]) === "yes" ||
+            getField(data, ["Room sharing", "roomSharing"]) === true ||
+            String(getField(data, ["Room sharing", "roomSharing"]) || "").toLowerCase() === "true",
+        startDate: getField(data, ["When do you need the helper", "startDate"]) || "",
+        preferences: normPrefText,
+        budget: String(getField(data, ["Salary and palcement budget", "budget"]) || ""),
         nationalityPreferences: extractNationalityPrefs(
-            data["Nationality preference"],
-            data["Preference remarks"]
+            getField(data, ["Nationality preference", "nationalityPreferences"]),
+            getField(data, ["Preference remarks", "preferences"])
         ),
-        helperType: data["Type of helper"] || "",
-        // --- Autofill from preference lines if empty ---
-        agePreference: data["Prefer helper age"] || prefNumbers.age || "",
-        englishRequirement: data["Prefer helper English Level"] || "",
-        heightPreference: data["Prefer Helper Height (cm)"] || prefNumbers.height || "",
-        weightPreference: data["Prefer Helper Weight (kg)"] || prefNumbers.weight || "",
-        experienceTags: data["Prefer helper experince in infant/child/elder care"]
-            ? data["Prefer helper experince in infant/child/elder care"].split(",").map((s: string) => s.trim()).filter(Boolean)
-            : [],
-        religionPreference: data["Prefer helper Religion"] || data["Prefer helper Religion "] || "",
-        educationRequirement: data["Prefer helper Education"] || "",
-        maritalPreference: data["Prefer helper Marital Status"] || "",
-        helperChildrenAges: data["Prefer helper Children age"] || "",
-        excludedBios: data["Bio Sended"]
-            ? data["Bio Sended"].split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean)
-            : [],
-        focusArea: [],
+        helperType: getField(data, ["Type of helper", "helperType"]) || "",
+        agePreference: getField(data, ["Prefer helper age", "agePreference"]) || prefNumbers.age || "",
+        englishRequirement: getField(data, ["Prefer helper English Level", "englishRequirement"]) || "",
+        heightPreference: getField(data, ["Prefer Helper Height (cm)", "heightPreference"]) || prefNumbers.height || "",
+        weightPreference: getField(data, ["Prefer Helper Weight (kg)", "weightPreference"]) || prefNumbers.weight || "",
+        experienceTags: splitToArray(getField(data, ["Prefer helper experince in infant/child/elder care", "experienceTags"])),
+        religionPreference: getField(data, ["Prefer helper Religion", "Prefer helper Religion ", "religionPreference"]) || "",
+        educationRequirement: getField(data, ["Prefer helper Education", "educationRequirement"]) || "",
+        maritalPreference: getField(data, ["Prefer helper Marital Status", "maritalPreference"]) || "",
+        helperChildrenAges: getField(data, ["Prefer helper Children age", "helperChildrenAges"]) || "",
+        excludedBios: splitToArray(getField(data, ["Bio Sended", "excludedBios"])),
+        focusArea: splitToArray(getField(data, ["focusArea"])),
     };
 }
