@@ -3,46 +3,62 @@ import { search } from "fast-fuzzy";
 // @ts-ignore
 import levenshtein from "js-levenshtein";
 import dayjs from "dayjs";
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import { extractNationalityPrefs } from '../utils/extractNationalityPrefs';
 import { jobscopeMatcher } from '../utils/jobscopeMatcher';
 
-// --- Fuzzy match helper: browser-safe, robust, multi-strategy ---
+// Extend dayjs with isSameOrBefore plugin
+dayjs.extend(isSameOrBefore);
+
+// --- Cache for Fuse.js instances ---
+const fuseCache = new Map<string, Fuse<any>>();
+function getFuseInstance(haystack: string): Fuse<any> {
+    if (!fuseCache.has(haystack)) {
+        fuseCache.set(haystack, new Fuse([{ text: haystack }], { keys: ["text"], threshold: 0.4 }));
+    }
+    return fuseCache.get(haystack)!;
+}
+
+// --- Fuzzy match helper with weighted scoring ---
 export function fuzzyIncludesCombined(
     haystack: string,
     needle: string,
-    fuseThreshold = 0.4,
     levThreshold = 4
-) {
-    if (!haystack || !needle) return false;
-    const hay = haystack.toLowerCase();
-    const ned = needle.toLowerCase();
-    const fastResult = search(ned, [hay]);
-    const fuse = new Fuse([{ text: hay }], { keys: ["text"], threshold: fuseThreshold });
+): { matched: boolean; score: number } {
+    if (!haystack || !needle) return { matched: false, score: 0 };
+    const hay = haystack.toLowerCase().trim();
+    const ned = needle.toLowerCase().trim();
+    const fastResult = search(ned, [hay], { returnMatchData: true });
+    const fuse = getFuseInstance(hay);
     const fuseResult = fuse.search(ned);
     const levDist = levenshtein(hay, ned);
+    const maxLen = Math.max(hay.length, ned.length);
+    const levScore = maxLen > 0 ? 1 - levDist / maxLen : 0;
 
-    return (
-        (fastResult.length && fastResult[0] === hay) ||
-        fuseResult.length > 0 ||
-        levDist <= levThreshold ||
-        hay.includes(ned)
-    );
+    let score = 0;
+    if (fastResult.length && fastResult[0].item === hay) score = 1;
+    else if (fuseResult.length > 0) score = 1 - fuseResult[0].score!;
+    else if (levDist <= levThreshold) score = levScore * 0.8;
+    else if (hay.includes(ned)) score = 0.9;
+
+    return { matched: score > 0, score };
 }
 
 function isYes(value: any): boolean {
     return (value || '')
         .toString()
-        .replace(/^[\s\u200B-\u200D\uFEFF\-–—]+/g, '')  // removes all types of dashes, unicode spaces
-        .replace(/^\W+/, '') // removes any other non-alphanumeric at start
+        .replace(/^[\s\u200B-\u200D\uFEFF\-–—]+/g, '')
+        .replace(/^\W+/, '')
         .trim()
         .toLowerCase() === 'yes';
 }
-function parseThreeVal(value: any) {
+
+function parseThreeVal(value: any): { matched: boolean; status: string; clean: string; score: number } {
     const v = (value || '').toString().trim().toLowerCase();
-    if (v === "yes") return { matched: true, status: "match", clean: "Yes" };
-    if (v === "no, but willing to learn") return { matched: false, status: "partial", clean: "No, but willing to learn" };
-    if (v === "will not accept" || v === "no") return { matched: false, status: "mismatch", clean: "Will not accept" };
-    return { matched: false, status: "mismatch", clean: v ? value : "No" };
+    if (v === "yes") return { matched: true, status: "match", clean: "Yes", score: 1 };
+    if (v === "no, but willing to learn") return { matched: false, status: "partial", clean: "No, but willing to learn", score: 0.5 };
+    if (v === "will not accept" || v === "no") return { matched: false, status: "mismatch", clean: "Will not accept", score: 0 };
+    return { matched: false, status: "mismatch", clean: v ? value : "No", score: 0 };
 }
 
 function extractPrefNumbers(preferences: string) {
@@ -115,6 +131,25 @@ function fuzzyParseDate(str: string) {
     return null;
 }
 
+// --- Map child age to care band ---
+function getCareBand(age: string): { type: 'infant' | 'childcare'; field: string; label: string } | null {
+    const ageNum = parseFloat(age.replace(/[^0-9.]/g, ''));
+    if (isNaN(ageNum)) return null;
+    if (ageNum <= 0.5) return { type: 'infant', field: "Infant Care Work Experience YES IF 0-6m", label: "Infant Care (0-6m)" };
+    if (ageNum <= 1) return { type: 'infant', field: "Infant Care Work Experience YES IF 7-12m", label: "Infant Care (7-12m)" };
+    if (ageNum <= 3) return { type: 'childcare', field: "Childcare Work Experience YES IF 1-3y", label: "Childcare (1-3y)" };
+    if (ageNum <= 6) return { type: 'childcare', field: "Childcare Work Experience YES IF 4-6y", label: "Childcare (4-6y)" };
+    if (ageNum <= 12) return { type: 'childcare', field: "Childcare Work Experience YES IF 7-12y", label: "Childcare (7-12y)" };
+    return null;
+}
+
+// --- Parse years of experience ---
+function parseYearsOfExperience(years: any): number {
+    const yearsStr = (years || '').toString().replace(/[^0-9.]/g, '');
+    const yearsNum = parseFloat(yearsStr);
+    return isNaN(yearsNum) ? 0 : Math.min(yearsNum, 20); // Cap at 20 years for scoring
+}
+
 export interface MatchCriterion {
     name: string;
     criteria: string;
@@ -123,27 +158,62 @@ export interface MatchCriterion {
     value?: any;
     reason?: string;
     weight: number;
+    score: number;
     [key: string]: any;
 }
 
 export interface MatchReport {
     helper: any;
     score: number;
+    maxScore: number;
     criteria: MatchCriterion[];
 }
 
-export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
+export function scoreAndReportHelper(helper: any, employer: any): MatchReport | null {
     let score = 0;
+    let maxScore = 0;
     const criteria: MatchCriterion[] = [];
 
-    // --- Normalize preference fields for fallback
+    // --- Critical Filter: Jobscope ---
+    if (Array.isArray(employer.jobscope) && employer.jobscope.length > 0) {
+        const { matchedTasks } = jobscopeMatcher(employer.jobscope, helper);
+        const jobscopeWeight = employer.jobscope.length * 2;
+        const matched = matchedTasks.length === employer.jobscope.length;
+        criteria.push({
+            name: "Jobscope Match",
+            criteria: "Jobscope",
+            matched,
+            status: matched ? "match" : (matchedTasks.length > 0 ? "partial" : "mismatch"),
+            value: matchedTasks.length > 0
+                ? `${matchedTasks.length} of ${employer.jobscope.length} requested tasks matched: ${matchedTasks.join(', ')}`
+                : "No tasks matched",
+            reason: matched
+                ? "All requested jobscope tasks are covered"
+                : `Missing: ${employer.jobscope.filter((t: string) => !matchedTasks.includes(t)).join(', ')}`,
+            weight: jobscopeWeight,
+            score: matchedTasks.length * 2,
+        });
+        score += matchedTasks.length * 2;
+        maxScore += jobscopeWeight;
+        if (!matched) return null;
+    } else {
+        maxScore += 0;
+    }
+
+    // --- Dynamic Weighting based on focusArea ---
+    const focusArea = typeof employer.focusArea === 'string' ? employer.focusArea.toLowerCase() : '';
+    const isChildcareFocused = focusArea === 'childcare';
+    const isElderlyFocused = focusArea === 'elderly care';
+    const childcareWeightMultiplier = isChildcareFocused ? 2 : 1;
+    const elderlyWeightMultiplier = isElderlyFocused ? 2 : 1;
+
+    // --- Normalize preference fields ---
     const allPrefs = [
         (employer["Preference remarks"] || ''),
         (employer["preferences"] || '')
     ].filter(Boolean).join('\n');
     const prefNumbers = extractPrefNumbers(allPrefs);
 
-    // For matching: Use explicit field, else fallback to preference remark extraction
     const agePrefRaw = employer["Prefer helper age"] || prefNumbers.age || "";
     const weightPrefRaw = employer["Prefer Helper Weight (kg)"] || prefNumbers.weight || "";
     const heightPrefRaw = employer["Prefer Helper Height (cm)"] || prefNumbers.height || "";
@@ -164,23 +234,27 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             ? "Nationality matches employer preference"
             : `Preferred: ${empNats.join(", ")} | Helper: ${helperNat}`,
         weight: 1,
+        score: natMatch ? 1 : 0,
     });
-    if (natMatch) score += 1;
+    score += natMatch ? 1 : 0;
+    maxScore += 1;
 
     // --- 2. Ex-SG (fuzzy) ---
-    const exSG = fuzzyIncludesCombined(
+    const exSGResult = fuzzyIncludesCombined(
         ((helper["Type"] || "") + " " + (helper["Helper Exp."] || "")),
         "ex-sg"
     );
     criteria.push({
         name: "Ex-SG Experience",
         criteria: "Ex-SG Experience",
-        matched: exSG,
+        matched: exSGResult.matched,
         value: helper["Type"] || "",
-        reason: exSG ? "Helper is Ex-SG" : "Not Ex-SG",
+        reason: exSGResult.matched ? "Helper is Ex-SG" : "Not Ex-SG",
         weight: 2,
+        score: exSGResult.score * 2,
     });
-    if (exSG) score += 2;
+    score += exSGResult.score * 2;
+    maxScore += 2;
 
     // --- 3. English Level (fuzzy) ---
     const levels = ['learning', 'basic', 'average', 'good', 'very good'];
@@ -189,15 +263,15 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
     let helperLevel = 'average';
     if (levels.includes(rawLanguage)) {
         helperLevel = rawLanguage;
-    } else if (fuzzyIncludesCombined(rawLanguage, 'very good')) {
+    } else if (fuzzyIncludesCombined(rawLanguage, 'very good').matched) {
         helperLevel = 'very good';
-    } else if (fuzzyIncludesCombined(rawLanguage, 'good')) {
+    } else if (fuzzyIncludesCombined(rawLanguage, 'good').matched) {
         helperLevel = 'good';
-    } else if (fuzzyIncludesCombined(rawLanguage, 'average') || fuzzyIncludesCombined(rawLanguage, 'fair')) {
+    } else if (fuzzyIncludesCombined(rawLanguage, 'average').matched || fuzzyIncludesCombined(rawLanguage, 'fair').matched) {
         helperLevel = 'average';
-    } else if (fuzzyIncludesCombined(rawLanguage, 'basic') || fuzzyIncludesCombined(rawLanguage, 'poor')) {
+    } else if (fuzzyIncludesCombined(rawLanguage, 'basic').matched || fuzzyIncludesCombined(rawLanguage, 'poor').matched) {
         helperLevel = 'basic';
-    } else if (fuzzyIncludesCombined(rawLanguage, 'learning')) {
+    } else if (fuzzyIncludesCombined(rawLanguage, 'learning').matched) {
         helperLevel = 'learning';
     }
     const engMatch = levels.indexOf(helperLevel) >= levels.indexOf(requiredLevel);
@@ -210,10 +284,62 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             ? "English is sufficient"
             : `Employer wants: ${employer["Prefer helper English Level"]}, Helper: ${helper["Language"]}`,
         weight: 1,
+        score: engMatch ? 1 : 0,
     });
-    if (engMatch) score += 1;
+    score += engMatch ? 1 : 0;
+    maxScore += 1;
 
-    // --- 4. Height (strict) ---
+    // --- 4. Additional Languages (fuzzy) ---
+    if (employer["Additional Languages"] && employer["Additional Languages"].length > 0) {
+        const reqLanguages = employer["Additional Languages"].map((lang: string) => lang.toLowerCase().trim());
+        const helperLanguages = (helper["Additional Languages"] || helper["Language"] || '').toLowerCase().split(/[\n,]/).map((s: string) => s.trim()).filter(Boolean);
+        let langMatches: string[] = [];
+        let langScore = 0;
+        reqLanguages.forEach((lang: string) => {
+            const result = fuzzyIncludesCombined(helperLanguages.join(' '), lang);
+            if (result.matched) {
+                langMatches.push(lang);
+                langScore += result.score;
+            }
+        });
+        const matched = langMatches.length > 0;
+        criteria.push({
+            name: "Additional Languages",
+            criteria: "Additional Languages",
+            matched,
+            value: helperLanguages.join(', ') || "None",
+            reason: matched
+                ? `Matched languages: ${langMatches.join(", ")}`
+                : `Employer wants: ${reqLanguages.join(", ")}, Helper: ${helperLanguages.join(", ") || "None"}`,
+            weight: reqLanguages.length,
+            score: langScore,
+        });
+        score += langScore;
+        maxScore += reqLanguages.length;
+    }
+
+    // --- 5. Years of Experience (scaled) ---
+    if (employer["Minimum Years of Experience"]) {
+        const minYears = parseFloat(employer["Minimum Years of Experience"]) || 0;
+        const helperYears = parseYearsOfExperience(helper["Years of Experience"]);
+        const expMatch = helperYears >= minYears;
+        const expScore = expMatch ? Math.min(helperYears / 10, 2) : 0;
+        criteria.push({
+            name: "Years of Experience",
+            criteria: "Years of Experience",
+            matched: expMatch,
+            value: helperYears,
+            reason: expMatch
+                ? `Helper has ${helperYears} years, meets minimum ${minYears}`
+                : `Helper has ${helperYears} years, below minimum ${minYears}`,
+            weight: 2,
+            score: expScore * 2,
+        });
+        score += expScore * 2;
+        maxScore += 4;
+    }
+
+    // --- 6. Height (strict) ---
     let heightMatch = true;
     if (heightPrefRaw) {
         let minHeight = 0, maxHeight = 999;
@@ -239,22 +365,23 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 ? "Height within preferred range"
                 : `Employer wants ${heightPrefRaw}, Helper: ${helper["Height (cm)"]}`,
             weight: 1,
+            score: heightMatch ? 1 : -1,
         });
-        if (heightMatch) score += 1;
+        score += heightMatch ? 1 : -1;
+        maxScore += 1;
     }
 
-    // --- 5. Weight (strict) ---
+    // --- 7. Weight (strict) ---
     let weightMatch = true;
     if (weightPrefRaw) {
-        const employerWeight = weightPrefRaw;
         let minWeight = 0, maxWeight = 9999;
-        const weightStr = employerWeight.toLowerCase().replace(/[^0-9\-]/g, '');
-        if (employerWeight.toLowerCase().includes('above')) {
+        const weightStr = weightPrefRaw.toLowerCase().replace(/[^0-9\-]/g, '');
+        if (weightPrefRaw.toLowerCase().includes('above')) {
             minWeight = parseInt(weightStr) || 0;
-        } else if (employerWeight.toLowerCase().includes('below')) {
+        } else if (weightPrefRaw.toLowerCase().includes('below')) {
             maxWeight = parseInt(weightStr) || 9999;
-        } else if (employerWeight.includes('-')) {
-            const parts = employerWeight.split('-').map((s: string) => parseInt(s));
+        } else if (weightPrefRaw.includes('-')) {
+            const parts = weightPrefRaw.split('-').map((s: string) => parseInt(s));
             minWeight = parts[0] || 0;
             maxWeight = parts[1] || 9999;
         }
@@ -268,13 +395,15 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: helper["Weight (Kg)"] || "",
             reason: weightMatch
                 ? "Weight within preferred range"
-                : `Employer wants ${employerWeight}, Helper: ${helper["Weight (Kg)"]}`,
+                : `Employer wants ${weightPrefRaw}, Helper: ${helper["Weight (Kg)"]}`,
             weight: 1,
+            score: weightMatch ? 1 : -1,
         });
-        if (weightMatch) score += 1;
+        score += weightMatch ? 1 : -1;
+        maxScore += 1;
     }
 
-    // --- 6. Age (strict) ---
+    // --- 8. Age (strict) ---
     let ageMatch = true;
     if (agePrefRaw && helper["Age"]) {
         let minAge = 0, maxAge = 99;
@@ -300,11 +429,13 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 ? "Age within preferred range"
                 : `Employer wants ${agePrefRaw}, Helper: ${helper["Age"]}`,
             weight: 1,
+            score: ageMatch ? 1 : -1,
         });
-        if (ageMatch) score += 1;
+        score += ageMatch ? 1 : -1;
+        maxScore += 1;
     }
 
-    // --- 7. Salary (strict) ---
+    // --- 9. Salary (strict) ---
     let salaryMatch = true;
     if (employer["Salary and placement budget"]) {
         const employerSalary = employer["Salary and placement budget"].replace(/[^0-9\-]/g, '');
@@ -331,65 +462,65 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             reason: salaryMatch
                 ? "Salary within preferred range"
                 : `Employer wants ${employer["Salary and placement budget"]}, Helper: ${helper["Salary"]}`,
-            weight: 1,
+            weight: 2,
+            score: salaryMatch ? 2 : -2,
         });
-        if (salaryMatch) score += 1;
+        score += salaryMatch ? 2 : -2;
+        maxScore += 2;
     }
 
-    // --- 8. Childcare Experience (YES/NO banded, strict) ---
-    const childcareBands = [
-        { field: "Childcare Work Experience YES IF 1-3y", label: "Childcare (1-3y)" },
-        { field: "Childcare Work Experience YES IF 4-6y", label: "Childcare (4-6y)" },
-        { field: "Childcare Work Experience YES IF 7-12y", label: "Childcare (7-12y)" },
+    // --- 10. Childcare and Infant Care Experience ---
+    const careBands = [
+        { type: 'infant', field: "Infant Care Work Experience YES IF 0-6m", label: "Infant Care (0-6m)" },
+        { type: 'infant', field: "Infant Care Work Experience YES IF 7-12m", label: "Infant Care (7-12m)" },
+        { type: 'childcare', field: "Childcare Work Experience YES IF 1-3y", label: "Childcare (1-3y)" },
+        { type: 'childcare', field: "Childcare Work Experience YES IF 4-6y", label: "Childcare (4-6y)" },
+        { type: 'childcare', field: "Childcare Work Experience YES IF 7-12y", label: "Childcare (7-12y)" },
     ];
-    childcareBands.forEach(band => {
-        const expValue = (helper[band.field] || '').toString().trim().toLowerCase();
-        const matched = expValue === 'yes';
-        criteria.push({
-            name: band.label,
-            criteria: band.field,
-            matched,
-            value: matched ? "Yes" : "No",
-            reason: matched ? `Has experience with ${band.label}` : `No experience with ${band.label}`,
-            weight: 1,
+    if (employer.childrenAges && employer.childrenAges.length > 0) {
+        const requiredBands = new Set(employer.childrenAges.map((age: string) => getCareBand(age)?.field).filter(Boolean));
+        careBands.forEach(band => {
+            const expValue = (helper[band.field] || '').toString().trim().toLowerCase();
+            const matched = expValue === 'yes';
+            const isRequired = requiredBands.has(band.field);
+            const weight = isRequired ? 5 * childcareWeightMultiplier : 1 * childcareWeightMultiplier;
+            criteria.push({
+                name: band.label,
+                criteria: band.field,
+                matched,
+                value: matched ? "Yes" : "No",
+                reason: matched
+                    ? `Has experience with ${band.label}`
+                    : isRequired
+                        ? `Required: No experience with ${band.label}`
+                        : `No experience with ${band.label}`,
+                weight,
+                score: matched ? weight : (isRequired ? -weight : 0),
+            });
+            score += matched ? weight : (isRequired ? -weight : 0);
+            maxScore += weight;
         });
-        if (matched) score += 1;
-    });
+        if (score <= -10) return null;
+    } else {
+        const baseWeight = 1 * childcareWeightMultiplier;
+        maxScore += 5 * baseWeight;
+    }
 
-    // --- 9. Infant Care Experience (YES/NO banded, strict) ---
-    const infantBands = [
-        { field: "Infant Care Work Experience YES IF 0-6m", label: "Infant Care (0-6m)" },
-        { field: "Infant Care Work Experience YES IF 7-12m", label: "Infant Care (7-12m)" },
-    ];
-    infantBands.forEach(band => {
-        const expValue = (helper[band.field] || '').toString().trim().toLowerCase();
-        const matched = expValue === 'yes';
-        criteria.push({
-            name: band.label,
-            criteria: band.field,
-            matched,
-            value: matched ? "Yes" : "No",
-            reason: matched ? `Has experience with ${band.label}` : `No experience with ${band.label}`,
-            weight: 1,
-        });
-        if (matched) score += 1;
-    });
-
-    // --- Elderly Care Experience (merged) ---
+    // --- 11. Elderly Care Experience ---
     let elderlyCareType = "";
     let elderlyCareMatched = false;
-
     if ("Elderly Care Work Experience (Yes/No)" in helper) {
         elderlyCareMatched = isYes(helper["Elderly Care Work Experience (Yes/No)"]);
         elderlyCareType = elderlyCareMatched ? "Structured field (Yes)" : "Structured field (No)";
     } else {
-        elderlyCareMatched = fuzzyIncludesCombined(
+        const fuzzyResult = fuzzyIncludesCombined(
             (helper["Work Experience"] || '') + " " + (helper["Skills"] || ''),
             'elderly'
         );
-        elderlyCareType = elderlyCareMatched ? "Free text match" : "No evidence";
+        elderlyCareMatched = fuzzyResult.matched;
+        elderlyCareType = fuzzyResult.matched ? "Free text match" : "No evidence";
     }
-
+    const elderlyWeight = employer.numberOfElderly > 0 ? 5 * elderlyWeightMultiplier : 1 * elderlyWeightMultiplier;
     criteria.push({
         name: "Elderly Care Experience",
         criteria: "Elderly Care Experience",
@@ -401,13 +532,16 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 ? "Has elderly care experience (structured field)"
                 : "Has elderly care experience (free text)")
             : "No elderly care experience found",
-        weight: elderlyCareMatched ? 1 : 0,
+        weight: elderlyWeight,
+        score: elderlyCareMatched ? elderlyWeight : (employer.numberOfElderly > 0 ? -elderlyWeight : 0),
     });
-    if (elderlyCareMatched) score += 1;
+    score += elderlyCareMatched ? elderlyWeight : (employer.numberOfElderly > 0 ? -elderlyWeight : 0);
+    maxScore += elderlyWeight;
 
-    // --- Care Giver/Nursing aid Cert (Yes/No) ---
+    // --- 12. Care Giver/Nursing Cert ---
     if ('Care Giver/Nursing aid Cert (Yes/No)' in helper) {
         const matched = isYes(helper["Care Giver/Nursing aid Cert (Yes/No)"]);
+        const weight = isElderlyFocused ? 3 : 1;
         criteria.push({
             name: "Care Giver/Nursing Cert",
             criteria: "Care Giver/Nursing aid Cert (Yes/No)",
@@ -415,14 +549,17 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             status: matched ? "match" : "mismatch",
             value: matched ? "Yes" : "No",
             reason: matched ? "Has care giver/nursing cert" : "No care giver/nursing cert",
-            weight: matched ? 1 : 0,
+            weight,
+            score: matched ? weight : 0,
         });
-        if (matched) score += 1;
+        score += matched ? weight : 0;
+        maxScore += weight;
     }
 
-    // --- Personal Elderly Care Experience (Yes/No or 3-value) ---
+    // --- 13. Personal Elderly Care Experience ---
     if ('Personal Elderly Care Experience (Yes/No)' in helper) {
         const value = (helper["Personal Elderly Care Experience (Yes/No)"] || '').toString().trim().toLowerCase();
+        const weight = isElderlyFocused ? 3 : 1;
         if (["yes", "no"].includes(value)) {
             const matched = value === "yes";
             criteria.push({
@@ -432,9 +569,10 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 status: matched ? "match" : "mismatch",
                 value: matched ? "Yes" : "No",
                 reason: matched ? "Has personal elderly care experience" : "No personal elderly care experience",
-                weight: matched ? 1 : 0,
+                weight,
+                score: matched ? weight : 0,
             });
-            if (matched) score += 1;
+            score += matched ? weight : 0;
         } else {
             const res = parseThreeVal(value);
             criteria.push({
@@ -448,15 +586,18 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                     : res.status === "partial"
                         ? "No experience, but willing to learn"
                         : "Will not accept",
-                weight: res.status === "match" ? 1 : 0,
+                weight,
+                score: res.score * weight,
             });
-            if (res.status === "match") score += 1;
+            score += res.score * weight;
         }
+        maxScore += weight;
     }
 
-    // --- Personal Infant Care Experience (3-value) ---
+    // --- 14. Personal Infant Care Experience ---
     if ('Personal Infant Care Experience YES if have same work exp OR OWN CHILDREN <3YO' in helper) {
         const res = parseThreeVal(helper["Personal Infant Care Experience YES if have same work exp OR OWN CHILDREN <3YO"]);
+        const weight = isChildcareFocused ? 3 : 1;
         criteria.push({
             name: "Personal Infant Care Experience",
             criteria: "Personal Infant Care Experience YES if have same work exp OR OWN CHILDREN <3YO",
@@ -468,14 +609,17 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 : res.status === "partial"
                     ? "No experience, but willing to learn"
                     : "Will not accept",
-            weight: res.status === "match" ? 1 : 0,
+            weight,
+            score: res.score * weight,
         });
-        if (res.status === "match") score += 1;
+        score += res.score * weight;
+        maxScore += weight;
     }
 
-    // --- Personal Childcare Experience (3-value) ---
+    // --- 15. Personal Childcare Experience ---
     if ('Personal Childcare Experience YES if have same work exp OR OWN CHILDREN <6YO' in helper) {
         const res = parseThreeVal(helper["Personal Childcare Experience YES if have same work exp OR OWN CHILDREN <6YO"]);
+        const weight = isChildcareFocused ? 3 : 1;
         criteria.push({
             name: "Personal Childcare Experience",
             criteria: "Personal Childcare Experience YES if have same work exp OR OWN CHILDREN <6YO",
@@ -487,37 +631,45 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
                 : res.status === "partial"
                     ? "No experience, but willing to learn"
                     : "Will not accept",
-            weight: res.status === "match" ? 1 : 0,
+            weight,
+            score: res.score * weight,
         });
-        if (res.status === "match") score += 1;
+        score += res.score * weight;
+        maxScore += weight;
     }
 
-    // --- 14. Cooking (fuzzy) ---
+    // --- 16. Cooking (fuzzy) ---
     const workExp = (helper["Work Experience"] || '').toLowerCase();
-    const cookMatch = fuzzyIncludesCombined(workExp, 'cook');
+    const cookResult = fuzzyIncludesCombined(workExp, 'cook');
+    const cookWeight = employer.jobscope?.includes('cooking') ? 3 : 1;
     criteria.push({
         name: "Cooking Experience",
         criteria: "Cooking Experience",
-        matched: cookMatch,
-        value: cookMatch ? "Yes" : "No",
-        reason: cookMatch ? "Has cooking experience" : "No cooking found in work experience",
-        weight: 1,
+        matched: cookResult.matched,
+        value: cookResult.matched ? "Yes" : "No",
+        reason: cookResult.matched ? "Has cooking experience" : "No cooking found in work experience",
+        weight: cookWeight,
+        score: cookResult.score * cookWeight,
     });
-    if (cookMatch) score += 1;
+    score += cookResult.score * cookWeight;
+    maxScore += cookWeight;
 
-    // --- 15. Household Chores (fuzzy) ---
-    const choresMatch = fuzzyIncludesCombined(workExp, 'household') || fuzzyIncludesCombined(workExp, 'clean');
+    // --- 17. Household Chores (fuzzy) ---
+    const choresResult = fuzzyIncludesCombined(workExp, 'household') || fuzzyIncludesCombined(workExp, 'clean').matched;
+    const choresWeight = employer.jobscope?.includes('household chores') ? 3 : 1;
     criteria.push({
         name: "Household Chores Experience",
         criteria: "Household Chores Experience",
-        matched: choresMatch,
-        value: choresMatch ? "Yes" : "No",
-        reason: choresMatch ? "Has household chores experience" : "No household chores found",
-        weight: 1,
+        matched: choresResult.matched,
+        value: choresResult ? "Yes" : "No",
+        reason: choresResult ? "Has household chores experience" : "No household chores found",
+        weight: choresWeight,
+        score: choresResult ? choresWeight : 0,
     });
-    if (choresMatch) score += 1;
+    score += choresResult ? choresWeight : 0;
+    maxScore += choresWeight;
 
-    // --- 16. Religion (strict) ---
+    // --- 18. Religion (strict) ---
     const empReligion = (employer["Prefer helper Religion"] || "").toLowerCase();
     const helperReligion = (helper["Religion"] || "").toLowerCase();
     let religionMatch = true;
@@ -530,16 +682,19 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: helper["Religion"] || "",
             reason: religionMatch ? "Religion matches" : `Employer: ${employer["Prefer helper Religion"]}, Helper: ${helper["Religion"]}`,
             weight: 1,
+            score: religionMatch ? 1 : -1,
         });
-        if (religionMatch) score += 1;
+        score += religionMatch ? 1 : -1;
     }
+    maxScore += 1;
 
-    // --- 17. Education (fuzzy) ---
+    // --- 19. Education (fuzzy) ---
     const empEdu = (employer["Prefer helper Education"] || "").toLowerCase();
     const helperEdu = (helper["Education"] || "").toLowerCase();
     let eduMatch = true;
     if (empEdu && empEdu !== "all" && empEdu !== "any" && empEdu !== "") {
-        eduMatch = fuzzyIncludesCombined(helperEdu, empEdu);
+        const eduResult = fuzzyIncludesCombined(helperEdu, empEdu);
+        eduMatch = eduResult.matched;
         criteria.push({
             name: "Education",
             criteria: "Education",
@@ -547,16 +702,19 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: helper["Education"] || "",
             reason: eduMatch ? "Education matches" : `Employer: ${employer["Prefer helper Education"]}, Helper: ${helper["Education"]}`,
             weight: 1,
+            score: eduResult.score,
         });
-        if (eduMatch) score += 1;
+        score += eduResult.score;
     }
+    maxScore += 1;
 
-    // --- 18. Marital Status (fuzzy) ---
+    // --- 20. Marital Status (fuzzy) ---
     const empMarital = (employer["Prefer helper Marital Status"] || "").toLowerCase();
     const helperMarital = (helper["Marital Status"] || "").toLowerCase();
     let maritalMatch = true;
     if (empMarital && empMarital !== "all" && empMarital !== "any" && empMarital !== "") {
-        maritalMatch = fuzzyIncludesCombined(helperMarital, empMarital);
+        const maritalResult = fuzzyIncludesCombined(helperMarital, empMarital);
+        maritalMatch = maritalResult.matched;
         criteria.push({
             name: "Marital Status",
             criteria: "Marital Status",
@@ -564,45 +722,50 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: helper["Marital Status"] || "",
             reason: maritalMatch ? "Marital Status matches" : `Employer: ${employer["Prefer helper Marital Status"]}, Helper: ${helper["Marital Status"]}`,
             weight: 1,
+            score: maritalResult.score,
         });
-        if (maritalMatch) score += 1;
+        score += maritalResult.score;
     }
+    maxScore += 1;
 
-    // --- 19. Pork handling (fuzzy) ---
+    // --- 21. Pork Handling (fuzzy) ---
     if (employer["Eat Pork"] && employer["Eat Pork"] !== "all") {
-        const porkMatch = fuzzyIncludesCombined(
+        const porkResult = fuzzyIncludesCombined(
             (helper["Eat Pork"] || "").toUpperCase(),
             employer["Eat Pork"].toUpperCase()
         );
         criteria.push({
             name: "Eat Pork",
             criteria: "Eat Pork",
-            matched: porkMatch,
+            matched: porkResult.matched,
             value: helper["Eat Pork"] || "",
-            reason: porkMatch ? "Matches pork eating preference" : `Employer: ${employer["Eat Pork"]}, Helper: ${helper["Eat Pork"]}`,
+            reason: porkResult.matched ? "Matches pork eating preference" : `Employer: ${employer["Eat Pork"]}, Helper: ${helper["Eat Pork"]}`,
             weight: 1,
+            score: porkResult.score,
         });
-        if (porkMatch) score += 1;
+        score += porkResult.score;
+        maxScore += 1;
     }
 
-    // --- 20. Handle pork (fuzzy) ---
     if (employer["Handle Pork"] && employer["Handle Pork"] !== "all") {
-        const handlePorkMatch = fuzzyIncludesCombined(
+        const handlePorkResult = fuzzyIncludesCombined(
             (helper["Handle Pork"] || "").toUpperCase(),
             employer["Handle Pork"].toUpperCase()
         );
         criteria.push({
             name: "Handle Pork",
             criteria: "Handle Pork",
-            matched: handlePorkMatch,
+            matched: handlePorkResult.matched,
             value: helper["Handle Pork"] || "",
-            reason: handlePorkMatch ? "Matches handle pork preference" : `Employer: ${employer["Handle Pork"]}, Helper: ${helper["Handle Pork"]}`,
+            reason: handlePorkResult.matched ? "Matches handle pork preference" : `Employer: ${employer["Handle Pork"]}, Helper: ${helper["Handle Pork"]}`,
             weight: 1,
+            score: handlePorkResult.score,
         });
-        if (handlePorkMatch) score += 1;
+        score += handlePorkResult.score;
+        maxScore += 1;
     }
 
-    // --- 21. Off day (strict) ---
+    // --- 22. Off Days (strict) ---
     if (employer["No. of Off Day"]) {
         const offDayMatch = (helper["No. of Off Day"] || "") === employer["No. of Off Day"];
         criteria.push({
@@ -612,18 +775,19 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: helper["No. of Off Day"] || "",
             reason: offDayMatch ? "Matches off day requirement" : `Employer: ${employer["No. of Off Day"]}, Helper: ${helper["No. of Off Day"]}`,
             weight: 1,
+            score: offDayMatch ? 1 : -1,
         });
-        if (offDayMatch) score += 1;
+        score += offDayMatch ? 1 : -1;
+        maxScore += 1;
     }
 
-    // --- 22. Passport Status vs Employer Timing Need (strict) ---
+    // --- 23. Passport Status and Availability Scheduling ---
     const empWhen = (employer["When do you need the helper"] || "").toLowerCase().trim();
     const helperPassport = (helper["Passport Status"] || "").toLowerCase();
-
+    const helperAvailableFrom = fuzzyParseDate(helper["Available From"] || "");
     let passportMatch = true;
     let passportWeight = 1;
     let passportReason = "No specific timing required";
-
     const targetDate = fuzzyParseDate(empWhen);
     const now = dayjs();
     let isUrgent = empWhen.includes("immediate") || empWhen.includes("urgent") || empWhen.includes("asap");
@@ -631,89 +795,113 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
         const daysUntil = targetDate.diff(now, "day");
         if (daysUntil <= 45) isUrgent = true;
     }
-
     if (!empWhen || empWhen.includes("anytime") || empWhen.includes("any time")) {
         passportMatch = true;
         passportReason = "No timing specified, any passport status accepted";
     } else if (isUrgent) {
-        passportWeight = 2;
-        passportMatch = helperPassport === "ready";
+        passportWeight = 3;
+        passportMatch = helperPassport === "ready" && (!helperAvailableFrom || helperAvailableFrom.isSameOrBefore(now));
         passportReason = passportMatch
-            ? "Helper passport ready for urgent need"
-            : "Employer needs urgent/helper is not passport ready";
+            ? "Helper passport ready and available for urgent need"
+            : `Employer needs urgent, but passport: ${helperPassport}, available: ${helper["Available From"] || "N/A"}`;
     } else if (targetDate && targetDate.isValid()) {
         const daysUntil = targetDate.diff(now, "day");
         if (daysUntil <= 45) {
-            passportWeight = 2;
-            passportMatch = helperPassport === "ready";
+            passportWeight = 3;
+            passportMatch = helperPassport === "ready" && (!helperAvailableFrom || helperAvailableFrom.isSameOrBefore(targetDate));
             passportReason = passportMatch
-                ? "Passport ready for upcoming start"
-                : `Employer needs within ${daysUntil} days, but passport not ready`;
+                ? "Passport ready and available for upcoming start"
+                : `Employer needs within ${daysUntil} days, but passport: ${helperPassport}, available: ${helper["Available From"] || "N/A"}`;
         } else if (daysUntil <= 75) {
-            passportMatch = helperPassport === "ready" || helperPassport.includes("process");
+            passportWeight = 2;
+            passportMatch = (helperPassport === "ready" || helperPassport.includes("process")) &&
+                (!helperAvailableFrom || helperAvailableFrom.isSameOrBefore(targetDate));
             passportReason = passportMatch
-                ? "Passport ready or in processing for near-future start"
-                : `Employer needs in ~2 months, but passport is ${helper["Passport Status"]}`;
+                ? "Passport ready/in process and available for near-future start"
+                : `Employer needs in ~2 months, but passport: ${helperPassport}, available: ${helper["Available From"] || "N/A"}`;
         } else {
             passportMatch = true;
             passportReason = "Employer need is far in future, any status is OK";
         }
     } else {
+        passportWeight = 2;
         passportMatch = helperPassport === "ready" || helperPassport.includes("process");
         passportReason = passportMatch
             ? "Passport ready/in process for general need"
             : "Passport status might delay placement";
     }
-
     criteria.push({
-        name: "Passport Readiness",
-        criteria: "Passport Readiness",
+        name: "Passport and Availability",
+        criteria: "Passport Status and Availability",
         matched: passportMatch,
-        value: helper["Passport Status"] || "",
+        value: `${helper["Passport Status"] || "N/A"}, Available: ${helper["Available From"] || "N/A"}`,
         reason: passportReason,
         weight: passportWeight,
+        score: passportMatch ? passportWeight : -passportWeight,
     });
-    if (passportMatch) score += passportWeight;
+    score += passportMatch ? passportWeight : -passportWeight;
+    maxScore += passportWeight;
 
-    // --- 23. Jobscope Matching (jobscopeMatcher.ts helper!) ---
-    if (Array.isArray(employer.jobscope) && employer.jobscope.length > 0) {
-        const { matchedTasks, missingTasks } = jobscopeMatcher(employer.jobscope, helper);
-        const matched = matchedTasks.length === employer.jobscope.length && employer.jobscope.length > 0;
-        criteria.push({
-            name: "Jobscope Match",
-            criteria: "Jobscope",
-            matched,
-            status: matched
-                ? "match"
-                : (matchedTasks.length > 0 ? "partial" : "mismatch"),
-            value: matchedTasks.length > 0
-                ? `${matchedTasks.length} of ${employer.jobscope.length} requested tasks matched: ${matchedTasks.join(', ')}`
-                : "No tasks matched",
-            reason: matched
-                ? "All requested jobscope tasks are covered in helper's structured experience"
-                : missingTasks.length > 0
-                    ? `Missing: ${missingTasks.join(', ')}`
-                    : "No specific tasks requested",
-            weight: employer.jobscope.length > 0 ? employer.jobscope.length : 1
+    // --- 25. Pet Compatibility (fuzzy) ---
+    if (employer.pets && employer.pets.length > 0) {
+        const reqPets = employer.pets.map((p: string) => p.toLowerCase().trim());
+        const helperPets = Array.isArray(helper["Pets"])
+            ? helper["Pets"].map((p: string) => p.toLowerCase().trim())
+            : [String(helper["Pets"] || "").toLowerCase().trim()];
+        let petMatches: string[] = [];
+        let petScore = 0;
+        reqPets.forEach((pet: string) => {
+            if (pet === "any") {
+                petMatches.push("any");
+                petScore += 1;
+            } else {
+                const result = fuzzyIncludesCombined(helperPets.join(' '), pet);
+                if (result.matched) {
+                    petMatches.push(pet);
+                    petScore += result.score;
+                }
+            }
         });
-        if (matchedTasks.length > 0) score += matchedTasks.length;
+        const matched = petMatches.length === reqPets.length || petMatches.includes("any");
+        criteria.push({
+            name: "Pet Compatibility",
+            criteria: "Pets",
+            matched,
+            value: helperPets.join(', ') || "None",
+            reason: matched
+                ? `Matches pet preferences: ${petMatches.join(", ")}`
+                : `Employer wants ${reqPets.join(", ")}, Helper: ${helperPets.join(", ") || "None"}`,
+            weight: reqPets.length * 2,
+            score: petScore,
+        });
+        score += petScore;
+        maxScore += reqPets.length * 2;
     }
 
-    // --- 24. Preference Remarks Matching (fuzzy) ---
+    // --- 26. Preference Remarks Matching with Priority (fuzzy) ---
     if (employer.preferences && employer.preferences.length > 0) {
-        const prefs = employer.preferences.toLowerCase().split(/[\n,]/).map((s: string) => s.trim()).filter(Boolean);
+        const prefs = employer.preferences
+            .toLowerCase()
+            .split(/[\n,]/)
+            .map((s: string) => {
+                const [pref, priority] = s.split('(').map(part => part.replace(')', '').trim());
+                return { pref, priority: priority === 'must-have' ? 3 : priority === 'nice-to-have' ? 1 : 2 };
+            })
+            .filter((p: { pref: string; priority: number }) => p.pref);
         const helperProfile = (
             ((helper["Work Experience"] || '') + ' ' +
                 (helper["Skills"] || '') + ' ' +
                 (helper["Bio"] || '')).toLowerCase()
         );
         let prefsMatched: string[] = [];
-        let prefsMissed: string[] = [];
-        prefs.forEach((pref: string) => {
-            if (pref && fuzzyIncludesCombined(helperProfile, pref)) {
-                prefsMatched.push(pref);
-            } else if (pref) {
-                prefsMissed.push(pref);
+        let totalPrefScore = 0;
+        prefs.forEach(({ pref, priority }: { pref: string; priority: number }) => {
+            if (pref) {
+                const result = fuzzyIncludesCombined(helperProfile, pref);
+                if (result.matched) {
+                    prefsMatched.push(pref);
+                    totalPrefScore += result.score * priority;
+                }
             }
         });
         const matched = prefsMatched.length > 0;
@@ -724,31 +912,25 @@ export function scoreAndReportHelper(helper: any, employer: any): MatchReport {
             value: prefsMatched.length ? prefsMatched.join(', ') : "",
             reason: matched
                 ? `Matched preferences: ${prefsMatched.join(", ")}`
-                : (prefsMissed.length ? `No preferences matched. Example missing: ${prefsMissed[0]}` : "No preference phrases given"),
-            weight: 1,
+                : "No preferences matched",
+            weight: prefs.reduce((sum: number, p: { priority: number }) => sum + p.priority, 0),
+            score: totalPrefScore,
         });
-        if (matched) score += prefsMatched.length * 1;
+        score += totalPrefScore;
+        maxScore += prefs.reduce((sum: number, p: { priority: number }) => sum + p.priority, 0);
     }
+
     return {
         helper,
         score,
+        maxScore,
         criteria
     };
 }
 
-// --- Helper for ranking ---
 export function rankHelpers(helpers: any[], employer: any): MatchReport[] {
     return helpers
         .map(helper => scoreAndReportHelper(helper, employer))
+        .filter((report): report is MatchReport => report !== null)
         .sort((a, b) => b.score - a.score);
 }
-
-/*
-==========================================================
-PRO TIP: YES/NO fields should use strict matching only!
-==========================================================
-For "Yes"/"No" structured columns, use:
-    (value || '').toString().trim().toLowerCase() === 'yes'
-Never fuzzy match these fields.
-==========================================================
-*/

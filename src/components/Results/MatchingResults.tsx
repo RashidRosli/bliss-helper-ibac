@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle,
   AlertCircle,
@@ -10,6 +10,9 @@ import {
   DollarSign,
   RefreshCw,
   ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  FileText,
 } from "lucide-react";
 import type { MatchResult, Helper, EmployerRequirements } from "../../types";
 
@@ -20,24 +23,23 @@ function parseExperiencePeriods(workExpText: string) {
   let match;
 
   while ((match = regex.exec(workExpText)) !== null) {
-    if (match[1]) { // Years (maybe months)
+    if (match[1]) {
       const years = parseInt(match[1], 10) || 0;
       const months = parseInt(match[2], 10) || 0;
       totalMonths += years * 12 + months;
-    } else if (match[3]) { // Only months
+    } else if (match[3]) {
       const months = parseInt(match[3], 10) || 0;
       totalMonths += months;
-    } else if (match[4]) { // Only days
+    } else if (match[4]) {
       const days = parseInt(match[4], 10) || 0;
       totalDays += days;
     }
   }
-  // Convert days to months
   totalMonths += totalDays / 30;
 
   return {
     months: +(totalMonths).toFixed(1),
-    years: +(totalMonths / 12).toFixed(1)
+    years: +(totalMonths / 12).toFixed(1),
   };
 }
 
@@ -64,30 +66,43 @@ interface MatchCriterion {
 
 function getEmployerRequestedCriteria(employer: any, matchResult: any) {
   const employerCriteriaFields = [
-    { key: "Nationality preference", rule: "Nationality" },
-    { key: "Prefer helper English Level", rule: "English Level" },
-    { key: "Prefer Helper Height (cm)", rule: "Height" },
-    { key: "Prefer Helper Weight (kg)", rule: "Weight" },
-    { key: "Salary and placement budget", rule: "Salary" },
-    { key: "Prefer helper Religion", rule: "Religion" },
-    { key: "Prefer helper Education", rule: "Education" },
-    { key: "Prefer helper Marital Status", rule: "Marital Status" },
-    { key: "No. of Off Day", rule: "Off Days" },
-    { key: "When do you need the helper", rule: "Passport Readiness" },
+    // Household Details
+    { key: "Household Type", rule: "Household Type", category: "Household Details" },
+    { key: "No. of Children", rule: "Number of Children", category: "Household Details" },
+    { key: "No. of Elderly", rule: "Number of Elderly", category: "Household Details" },
+    // Job Scope
+    { key: "Job Scope", rule: "Job Scope", category: "Job Scope" },
+    { key: "Special Skills", rule: "Special Skills", category: "Job Scope" },
+    // Preferences
+    { key: "Nationality preference", rule: "Nationality", category: "Preferences" },
+    { key: "Prefer helper English Level", rule: "English Level", category: "Preferences" },
+    { key: "Prefer Helper Height (cm)", rule: "Height", category: "Preferences" },
+    { key: "Prefer Helper Weight (kg)", rule: "Weight", category: "Preferences" },
+    { key: "Salary and placement budget", rule: "Salary", category: "Preferences" },
+    { key: "Prefer helper Religion", rule: "Religion", category: "Preferences" },
+    { key: "Prefer helper Education", rule: "Education", category: "Preferences" },
+    { key: "Prefer helper Marital Status", rule: "Marital Status", category: "Preferences" },
+    { key: "No. of Off Day", rule: "Off Days", category: "Preferences" },
+    { key: "When do you need the helper", rule: "Passport Readiness", category: "Preferences" },
   ];
+
   const requested = employerCriteriaFields
-    .filter(({ key }) => employer[key] && String(employer[key]).trim() !== "")
-    .map(({ rule }) => rule);
+    .filter(({ key }) => {
+      const value = employer[key];
+      if (Array.isArray(value)) return value.length > 0 && value.some(v => String(v).trim() !== "");
+      return value && String(value).trim() !== "";
+    })
+    .map(({ rule, category }) => ({ rule, category }));
 
   const requestedCriteria = (matchResult.matches || [])
-    .filter(
-      (crit: MatchCriterion) =>
-        !!(crit.criteria || crit.name) &&
-        requested.includes(String(crit.criteria || crit.name))
-    )
+    .filter((crit: MatchCriterion) => {
+      const critName = crit.criteria || crit.name;
+      return critName && requested.some(r => r.rule === critName);
+    })
     .map((crit: MatchCriterion) => ({
       ...crit,
       name: crit.name || crit.criteria,
+      category: requested.find(r => r.rule === (crit.criteria || crit.name))?.category || "Preferences",
     }));
 
   requestedCriteria.sort((a: MatchCriterion, b: MatchCriterion) => {
@@ -105,6 +120,7 @@ interface MatchingResultsProps {
   onRegenerate: () => void;
   onBack: () => void;
   onSuggestedHelpers: (helpers: Helper[]) => void;
+  onViewProfile: (helper: Helper) => void;
   results?: MatchResult[];
 }
 
@@ -114,11 +130,14 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
   onRegenerate,
   onBack,
   onSuggestedHelpers,
+  onViewProfile,
   results = [],
 }) => {
+  const [expandedHelpers, setExpandedHelpers] = useState<{ [key: number]: boolean }>({});
+
   const excludedBiosFromForm = normalizeExcludedBios(excludedBios);
 
-  // Only show available helpers NOT in excluded bios
+  // Filter available helpers
   const availableResults = useMemo(() => {
     if (!Array.isArray(results)) return [];
     return results.filter(r => {
@@ -128,14 +147,12 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
       if (typeof avail !== "string" || avail.trim().toLowerCase() !== "yes") return false;
       if (excludedBiosFromForm.includes(code)) return false;
 
-      // 1. Nationality filter
       if (requirements.nationalityPreferences && requirements.nationalityPreferences.length > 0) {
         const hNat = (helper["Nationality"] || "").toLowerCase().trim();
         const nats = requirements.nationalityPreferences.map((n: string) => n.toLowerCase().trim());
         if (!nats.includes(hNat)) return false;
       }
 
-      // 2. Age filter
       if (requirements.agePreference && helper["Age"]) {
         let minAge = 0, maxAge = 99;
         const agePref = requirements.agePreference;
@@ -151,7 +168,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         if (isNaN(hAge) || hAge < minAge || hAge > maxAge) return false;
       }
 
-      // 3. Salary filter
       if (requirements.budget && helper["Salary"]) {
         const budget = requirements.budget.replace(/[^0-9\-]/g, '');
         let minSalary = 0, maxSalary = 99999;
@@ -166,7 +182,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         if (isNaN(hSalary) || hSalary < minSalary || hSalary > maxSalary) return false;
       }
 
-      // 4. Height filter
       if (requirements.heightPreference && helper["Height (cm)"]) {
         let minHeight = 0, maxHeight = 999;
         const hPref = requirements.heightPreference;
@@ -182,7 +197,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         if (isNaN(hHeight) || hHeight < minHeight || hHeight > maxHeight) return false;
       }
 
-      // 5. Weight filter
       if (requirements.weightPreference && helper["Weight (Kg)"]) {
         let minWeight = 0, maxWeight = 9999;
         const wPref = requirements.weightPreference;
@@ -198,31 +212,62 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
         if (isNaN(hWeight) || hWeight < minWeight || hWeight > maxWeight) return false;
       }
 
-      // 6. Religion filter
       if (requirements.religionPreference && helper["Religion"]) {
-        // Normalize values for safe comparison
         const empRel = String(requirements.religionPreference).toLowerCase().trim();
         const helperRel = String(helper["Religion"]).toLowerCase().trim();
-
-        // If employer requires "any" or "all", do not filter (pass)
         if (empRel && empRel !== "any" && empRel !== "all" && empRel !== "") {
           if (helperRel !== empRel) return false;
         }
       }
 
-      // Otherwise, pass!
+      // Household and Job Scope Filters
+      if (requirements.householdType && helper["Household Type"]) {
+        const empHousehold = String(requirements.householdType).toLowerCase().trim();
+        const helperHousehold = String(helper["Household Type"]).toLowerCase().trim();
+        if (empHousehold && empHousehold !== "any" && helperHousehold !== empHousehold) return false;
+      }
+
+      if (requirements.numberOfChildren && helper["Experience with Children"]) {
+        const reqChildren = parseInt(String(requirements.numberOfChildren));
+        const helperChildren = parseInt(String(helper["Experience with Children"]));
+        if (isNaN(helperChildren) || helperChildren < reqChildren) return false;
+      }
+
+      if (requirements.numberOfElderly && helper["Experience with Elderly"]) {
+        const reqElderly = parseInt(String(requirements.numberOfElderly));
+        const helperElderly = parseInt(String(helper["Experience with Elderly"]));
+        if (isNaN(helperElderly) || helperElderly < reqElderly) return false;
+      }
+
+      if (requirements.jobscope && helper["Job Scope"]) {
+        const reqScopes = Array.isArray(requirements.jobscope)
+          ? requirements.jobscope.map(s => s.toLowerCase().trim())
+          : [String(requirements.jobscope).toLowerCase().trim()];
+        const helperScopes = Array.isArray(helper["Job Scope"])
+          ? helper["Job Scope"].map((s: string) => s.toLowerCase().trim())
+          : [String(helper["Job Scope"]).toLowerCase().trim()];
+        if (!reqScopes.every(s => s === "any" || helperScopes.includes(s))) return false;
+      }
+
+      if (requirements.specialSkills && helper["Special Skills"]) {
+        const reqSkills = Array.isArray(requirements.specialSkills)
+          ? requirements.specialSkills.map(s => s.toLowerCase().trim())
+          : [String(requirements.specialSkills).toLowerCase().trim()];
+        const helperSkills = Array.isArray(helper["Special Skills"])
+          ? helper["Special Skills"].map((s: string) => s.toLowerCase().trim())
+          : [String(helper["Special Skills"]).toLowerCase().trim()];
+        if (!reqSkills.every(s => s === "any" || helperSkills.includes(s))) return false;
+      }
+
       return true;
     });
   }, [results, excludedBiosFromForm, requirements]);
 
-
-  // Sort by score
   const sortedResults = useMemo(
     () => [...availableResults].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
     [availableResults]
   );
 
-  // Find excluded bios
   const excludedHelperObjs = useMemo(() => {
     if (!Array.isArray(results)) return [];
     const fromResults = results.filter(r => {
@@ -239,7 +284,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     return [...fromResults, ...dummyObjs];
   }, [results, excludedBiosFromForm]);
 
-  // Memoize helpers for parent
   const helpers = useMemo(
     () => (Array.isArray(sortedResults) ? sortedResults.map(r => r.helper).filter(Boolean) : []),
     [sortedResults]
@@ -253,15 +297,14 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
       onSuggestedHelpers(helpers);
       prevHelpersRef.current = currentCodes;
     }
-    // eslint-disable-next-line
   }, [helpers, onSuggestedHelpers]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "match":
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-teal-600" />;
       case "partial":
-        return <AlertCircle className="h-4 w-4 text-yellow-600" />;
+        return <AlertCircle className="h-4 w-4 text-orange-500" />;
       case "mismatch":
         return <XCircle className="h-4 w-4 text-red-600" />;
       default:
@@ -293,23 +336,30 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
     };
   };
 
+  const toggleHelperDetails = (index: number) => {
+    setExpandedHelpers(prev => ({ ...prev, [index]: !prev[index] }));
+  };
+
   const customerName = requirements.customerName || (requirements as any)["Name of client"] || "Customer";
   const customerContact = requirements.contact || "Contact";
 
   if (!Array.isArray(results) || results.length === 0) {
     return (
-      <div className="text-center py-12">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-md mx-auto">
-          <AlertCircle className="h-12 w-12 text-blue-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-blue-800 mb-2">No Available Helpers</h3>
-          <p className="text-blue-700 mb-4">
-            No helpers are currently available that meet your basic requirements.
+      <div className="text-center py-12 max-w-5xl mx-auto animate-fade-in">
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 max-w-md mx-auto shadow-md">
+          <AlertCircle className="h-12 w-12 text-orange-500 mx-auto mb-4" aria-hidden="true" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Available Helpers</h3>
+          <p className="text-sm text-gray-600 leading-6 mb-4">
+            No helpers are currently available that meet your requirements.
             <br />
-            Please try{" "}
-            <button onClick={onBack} className="underline text-blue-600">
-              go back
+            <button
+              onClick={onBack}
+              className="underline text-orange-500 hover:text-orange-600 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded text-sm"
+              aria-label="Go back to edit requirements"
+            >
+              Go back
             </button>{" "}
-            and adjust your requirements.
+            to adjust your requirements.
           </p>
         </div>
       </div>
@@ -319,48 +369,115 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
   const hasLowScoreMatches = sortedResults.some((r) => typeof r?.score === "number" && r.score < 30);
 
   return (
-    <div className="space-y-6">
-      {/* Top nav: Back + Regenerate */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* Top Navigation */}
+      <div className="flex items-center justify-between mb-6">
         <button
           onClick={onBack}
-          className="inline-flex items-center px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
+          className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-all duration-300 hover:scale-105 transform text-sm"
+          aria-label="Go back"
         >
-          <ArrowLeft className="h-4 w-4 mr-1" />
+          <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
           Back
         </button>
         <button
           onClick={onRegenerate}
-          className="inline-flex items-center px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition"
+          className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-all duration-300 hover:scale-105 transform text-sm"
           title="Regenerate results, excluding shown helpers"
+          aria-label="Regenerate results"
         >
-          <RefreshCw className="h-4 w-4 mr-1" />
+          <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
           Regenerate
         </button>
       </div>
 
-      {/* Low match score warning */}
-      {hasLowScoreMatches && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="h-5 w-5 text-yellow-600" />
-            <h3 className="font-semibold text-yellow-800">Limited Matches Found</h3>
+      {/* Client Requirements */}
+      <div
+        className="bg-orange-50 border border-orange-200 rounded-xl p-6 shadow-md animate-fade-in"
+        role="region"
+        aria-label="Client requirements"
+      >
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 leading-7">
+          <FileText className="h-5 w-5 text-orange-500" aria-hidden="true" />
+          Client Requirements
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm leading-6">
+          <div>
+            <span className="font-semibold text-gray-700">Household Type:</span>{" "}
+            <span className="text-teal-600">{requirements.householdType || "Any"}</span>
           </div>
-          <p className="text-yellow-700 mt-2 text-sm">
+          <div>
+            <span className="font-semibold text-gray-700">No. of Children:</span>{" "}
+            <span className="text-teal-600">{requirements.numberOfChildren || "Any"}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">No. of Elderly:</span>{" "}
+            <span className="text-teal-600">{requirements.numberOfElderly || "Any"}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Job Scope:</span>{" "}
+            <span className="text-teal-600">
+              {Array.isArray(requirements.jobscope) && requirements.jobscope.length > 0 ? requirements.jobscope.join(", ") : "Any"}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Special Skills:</span>{" "}
+            <span className="text-teal-600">
+              {Array.isArray(requirements.specialSkills) && requirements.specialSkills.length > 0 ? requirements.specialSkills.join(", ") : "Any"}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Nationality:</span>{" "}
+            <span className="text-teal-600">
+              {Array.isArray(requirements.nationalityPreferences) && requirements.nationalityPreferences.length > 0
+                ? requirements.nationalityPreferences.join(", ")
+                : "Any"}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Age Preference:</span>{" "}
+            <span className="text-teal-600">{requirements.agePreference || "Any"}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Budget:</span>{" "}
+            <span className="text-teal-600">{requirements.budget || "Any"}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Religion:</span>{" "}
+            <span className="text-teal-600">{requirements.religionPreference || "Any"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Low Match Score Warning */}
+      {hasLowScoreMatches && (
+        <div
+          className="bg-orange-50 border border-orange-200 rounded-xl p-4 shadow-md animate-fade-in"
+          role="region"
+          aria-label="Low match score warning"
+        >
+          <div className="flex items-center space-x-2 mb-2">
+            <AlertCircle className="h-5 w-5 text-orange-500" aria-hidden="true" />
+            <h3 className="text-lg font-semibold text-gray-900 leading-7">Limited Matches Found</h3>
+          </div>
+          <p className="text-sm text-gray-600 leading-6">
             Some results have lower match scores. Consider adjusting your criteria for better matches.
           </p>
         </div>
       )}
 
-      {/* Results Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Top matches for {customerName} ({customerContact})
+      {/* Top Matches Section */}
+      <div
+        className="w-full bg-white rounded-xl shadow-md border border-orange-200 animate-fade-in"
+        role="region"
+        aria-label="Top matches section"
+      >
+        <div className="px-6 py-4 border-b border-orange-200">
+          <h2 className="text-xl font-extrabold text-gray-900 leading-7">
+            Top Matches for {customerName} ({customerContact})
           </h2>
         </div>
-
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-orange-100">
           {sortedResults.slice(0, 3).map((result, index) => {
             const helper = result?.helper ?? {};
             const matches = Array.isArray(result?.matches) ? result.matches : [];
@@ -368,145 +485,225 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
             const workExpText = helper["Work Experience"] || "";
             const experience = parseExperiencePeriods(workExpText);
             const topRequestedCriteria = getEmployerRequestedCriteria(requirements, result);
+            const score = typeof result?.score === "number" && typeof result?.maxScore === "number"
+              ? (result.score / result.maxScore) * 100
+              : 0;
 
             return (
               <div key={`helper-result-${index}`} className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    <div className="bg-blue-100 p-2 rounded-lg">
-                      <User className="h-5 w-5 text-blue-600" />
+                    <div className="bg-teal-100 p-2 rounded-lg">
+                      <User className="h-5 w-5 text-teal-600" aria-hidden="true" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
+                      <h3 className="text-lg font-semibold text-gray-900 leading-7">
                         {helper["Name"] || "N/A"}
                       </h3>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-gray-600 leading-6">
                         Helper Code: {helper["Code"] || "N/A"}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="flex items-center space-x-2">
-                      <Star className="h-4 w-4 text-yellow-500" />
-                      <span className="text-lg font-semibold text-gray-900">
-                        {typeof result?.score === "number" ? result.score.toFixed(0) : "0"}%
+                    <div className="relative group">
+                      <div className="flex items-center space-x-2">
+                        <Star className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                        <span
+                          className="text-lg font-semibold text-gray-900 leading-7"
+                          aria-describedby={`score-tooltip-${index}`}
+                        >
+                          {score.toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 leading-6">Match Percentage</p>
+                      <div
+                        className="mt-1 bg-orange-100 h-2 rounded-full overflow-hidden"
+                        role="progressbar"
+                        aria-valuenow={score}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`Match percentage for ${helper["Name"] || "helper"}: ${score}%`}
+                      >
+                        <div
+                          className="bg-orange-500 h-full transition-all duration-300"
+                          style={{ width: `${score}%` }}
+                        ></div>
+                      </div>
+                      <span className="absolute hidden group-hover:block -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-md shadow-md z-10">
+                        Match percentage
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">Match Score</p>
                   </div>
                 </div>
 
-                {/* --- Top Employer-Requested Criteria --- */}
-                {topRequestedCriteria.length > 0 && (
-                  <div className="mb-4 p-4 rounded bg-blue-100 border">
-                    <div className="font-semibold mb-2 text-blue-900">Top Employer-Requested Criteria</div>
-                    <ul className="list-disc pl-6">
-                      {topRequestedCriteria.map((crit: MatchCriterion, i: number) => (
-                        <li key={i} className={crit.status === "match" ? "text-green-700" : "text-red-700"}>
-                          <b>{crit.name}</b>: {crit.status === "match" ? "Matched" : "Not Matched"}
-                          {crit.reason ? <span className="ml-2 text-gray-600">({crit.reason})</span> : null}
-                        </li>
-                      ))}
-                    </ul>
+                {/* Collapsible Details */}
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-sm font-semibold text-orange-500 hover:text-orange-600 mb-4 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded"
+                  onClick={() => toggleHelperDetails(index)}
+                  aria-expanded={!!expandedHelpers[index]}
+                  aria-controls={`helper-details-${index}`}
+                >
+                  {expandedHelpers[index] ? "Hide Details" : "Show Details"}
+                  {expandedHelpers[index] ? (
+                    <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+
+                {expandedHelpers[index] && (
+                  <div id={`helper-details-${index}`} className="space-y-4 animate-fade-in">
+                    {/* Top Employer-Requested Criteria */}
+                    {topRequestedCriteria.length > 0 && (
+                      <div className="p-4 rounded-xl bg-teal-50 border border-teal-200 shadow-md">
+                        <div className="font-semibold mb-2 text-teal-900 text-sm leading-6">
+                          Top Employer-Requested Criteria
+                        </div>
+                        <ul className="list-disc pl-6 space-y-1 text-sm leading-6">
+                          {topRequestedCriteria.map((crit: MatchCriterion & { category?: string }, i: number) => (
+                            <li
+                              key={i}
+                              className={crit.status === "match" ? "text-teal-700" : "text-red-600"}
+                              aria-label={`${crit.name}: ${crit.status === "match" ? "Matched" : "Not Matched"}`}
+                            >
+                              <div className="relative group">
+                                <span>
+                                  <b>{crit.name}</b> ({crit.category}):{" "}
+                                  {crit.status === "match" ? "Matched" : "Not Matched"}
+                                  {crit.reason && (
+                                    <span className="ml-2 text-gray-600">({crit.reason})</span>
+                                  )}
+                                </span>
+                                {crit.reason && (
+                                  <span className="absolute hidden group-hover:block -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-md shadow-md z-10">
+                                    {crit.reason}
+                                  </span>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Helper Overview */}
+                    <div className="bg-teal-50 rounded-xl p-4 shadow-md">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm leading-6">
+                        <div className="flex items-center space-x-2">
+                          <Globe className="h-4 w-4 text-teal-600" aria-hidden="true" />
+                          <span>{helper["Nationality"] || "—"}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <User className="h-4 w-4 text-teal-600" aria-hidden="true" />
+                          <span>{helper["Age"] ? `${helper["Age"]} years` : "—"}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="h-4 w-4 text-teal-600" aria-hidden="true" />
+                          <span>{experience.years > 0 ? `${experience.years} years` : "—"}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <DollarSign className="h-4 w-4 text-teal-600" aria-hidden="true" />
+                          <span>SGD {helper["Salary"] || "—"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Matching Criteria Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full border border-orange-200 rounded-xl">
+                        <thead className="bg-orange-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 leading-6">
+                              Criteria
+                            </th>
+                            <th className="px-4 py-2 text-center text-sm font-medium text-gray-700 leading-6">
+                              Status
+                            </th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 leading-6">
+                              Details
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-orange-100">
+                          {(matches.length > 0
+                            ? matches
+                            : [{ criteria: "—", status: "mismatch", details: "No data" }]).map((match, matchIndex) => (
+                              <tr
+                                key={`match-row-${matchIndex}`}
+                                className="odd:bg-white even:bg-orange-50 hover:bg-teal-50 transition-colors duration-200"
+                              >
+                                <td className="px-4 py-2 text-sm font-medium text-gray-900 leading-6">
+                                  {match?.criteria ?? "—"}
+                                </td>
+                                <td className="px-4 py-2 text-center">
+                                  <div className="flex items-center justify-center space-x-1">
+                                    {getStatusIcon(match?.status)}
+                                    <span className="text-sm">{getStatusSymbol(match?.status)}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2 text-sm text-gray-700 leading-6">
+                                  {match?.details ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Tailored Summary */}
+                    <div
+                      className="p-4 bg-teal-50 rounded-xl shadow-md"
+                      aria-live="polite"
+                    >
+                      <h4 className="font-semibold text-teal-900 mb-2 text-sm leading-6">Tailored Summary</h4>
+                      <div className="space-y-2 text-sm leading-6">
+                        <div className="relative group">
+                          <p>
+                            <strong>Match Percentage:</strong>{" "}
+                            <span id={`score-summary-${index}`}>
+                              {score.toFixed(0)}%
+                            </span>
+                          </p>
+                          <span className="absolute hidden group-hover:block -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-md shadow-md z-10">
+                            Match percentage
+                          </span>
+                        </div>
+                        {summary.full.length > 0 && (
+                          <p>
+                            <strong>Strong Matches:</strong>{" "}
+                            <span className="text-teal-700">{summary.full.join(", ")}</span>
+                          </p>
+                        )}
+                        {summary.partial.length > 0 && (
+                          <p>
+                            <strong>Partial Matches:</strong>{" "}
+                            <span className="text-orange-600">{summary.partial.join(", ")}</span>
+                          </p>
+                        )}
+                        {summary.missed.length > 0 && (
+                          <p>
+                            <strong>Not Matched:</strong>{" "}
+                            <span className="text-red-600">{summary.missed.join(", ")}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* View Profile Button */}
+                    <div className="mt-4 text-right">
+                      <button
+                        onClick={() => onViewProfile(helper)}
+                        className="inline-flex items-center px-3 py-1 bg-teal-100 text-teal-800 rounded-lg hover:bg-teal-200 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-all duration-300 hover:scale-105 transform text-sm"
+                        aria-label={`View profile for ${helper["Name"] || "helper"}`}
+                      >
+                        <FileText className="h-4 w-4 mr-1" aria-hidden="true" />
+                        View Profile
+                      </button>
+                    </div>
                   </div>
                 )}
-
-                {/* Helper Overview */}
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="flex items-center space-x-2">
-                      <Globe className="h-4 w-4 text-gray-500" />
-                      <span>{helper["Nationality"] || "—"}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <User className="h-4 w-4 text-gray-500" />
-                      <span>
-                        {helper["Age"] ? `${helper["Age"]} years` : "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                      <span>
-                        {experience.years > 0
-                          ? `${experience.years} years`
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <DollarSign className="h-4 w-4 text-gray-500" />
-                      <span>SGD {helper["Salary"] || "—"}</span>
-                    </div>
-                  </div>
-                  {/* Optionally display work exp text for debug:
-                  <div className="text-xs mt-2 text-gray-500">{workExpText}</div>
-                  */}
-                </div>
-
-                {/* Matching Criteria Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full border border-gray-200 rounded-lg">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                          Criteria
-                        </th>
-                        <th className="px-4 py-2 text-center text-sm font-medium text-gray-700">
-                          Score
-                        </th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                          Data Reference
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {(matches.length > 0
-                        ? matches
-                        : [{ criteria: "—", status: "mismatch", details: "No data" }])
-                        .map((match, matchIndex) => (
-                          <tr key={`match-row-${matchIndex}`} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                              {match?.criteria ?? "—"}
-                            </td>
-                            <td className="px-4 py-2 text-center">
-                              <div className="flex items-center justify-center space-x-1">
-                                {getStatusIcon(match?.status)}
-                                <span className="text-sm">{getStatusSymbol(match?.status)}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-2 text-sm text-gray-700">
-                              {match?.details ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Tailored Summary */}
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-semibold text-blue-900 mb-2">Tailored Summary:</h4>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <strong>% Match:</strong>{" "}
-                      {typeof result?.score === "number" ? result.score : 0}%
-                    </p>
-                    {summary.full.length > 0 && (
-                      <p>
-                        <strong>Strong matches:</strong> {summary.full.join(", ")}
-                      </p>
-                    )}
-                    {summary.partial.length > 0 && (
-                      <p>
-                        <strong>Partial matches:</strong> {summary.partial.join(", ")}
-                      </p>
-                    )}
-                    {summary.missed.length > 0 && (
-                      <p>
-                        <strong>Not matched:</strong> {summary.missed.join(", ")}
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
             );
           })}
@@ -515,21 +712,35 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
 
       {/* Excluded Bios Section */}
       {excludedHelperObjs.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-8">
-          <h3 className="font-semibold text-red-800 mb-2">❌ Excluded Bios:</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div
+          className="w-full bg-white rounded-xl shadow-md border border-red-200 animate-fade-in max-h-[600px] overflow-y-auto"
+          role="region"
+          aria-label="Excluded bios section"
+        >
+          <div className="px-6 py-4 border-t border-red-200">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 leading-7">
+              <XCircle className="h-5 w-5 text-red-600" aria-hidden="true" />
+              Excluded Bios
+            </h3>
+          </div>
+          <div className="p-6 grid grid-cols-1 gap-4">
             {excludedHelperObjs.map((result, idx) => {
               const helper = result?.helper || {};
               return (
-                <div key={helper["Code"] || idx} className="bg-white rounded shadow p-4 flex flex-col">
+                <div
+                  key={helper["Code"] || idx}
+                  className="bg-red-50 rounded-xl p-4 flex flex-col border border-red-200 hover:bg-red-100 transition-all duration-200"
+                >
                   <div className="flex items-center space-x-3 mb-2">
-                    <User className="h-5 w-5 text-red-600" />
-                    <span className="font-semibold text-red-900">{helper["Name"] || "N/A"}</span>
+                    <User className="h-5 w-5 text-red-600" aria-hidden="true" />
+                    <span className="text-sm font-semibold text-gray-900 leading-6">
+                      {helper["Name"] || "N/A"}
+                    </span>
                   </div>
-                  <div className="text-sm text-gray-600 mb-1">
+                  <div className="text-sm text-gray-600 leading-6 mb-1">
                     <span className="font-semibold">Code:</span> {helper["Code"] || "N/A"}
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-600 leading-6">
                     <span className="font-semibold">Nationality:</span> {(helper as any)["Nationality"] || "—"}
                     {(helper as any)["Age"] && (
                       <>
@@ -538,7 +749,6 @@ export const MatchingResults: React.FC<MatchingResultsProps> = ({
                       </>
                     )}
                   </div>
-                  {/* Add more details if desired */}
                 </div>
               );
             })}

@@ -307,10 +307,14 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   // ---- Initial Loading UI ----
   if (isInitialLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div
+        className="w-full min-h-screen flex items-center justify-center"
+        aria-busy="true"
+        aria-label="Loading customer data"
+      >
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto" aria-hidden="true" />
-          <p className="text-lg font-medium text-gray-700">Loading customer data...</p>
+          <Loader2 className="h-16 w-16 animate-spin text-orange-500 mx-auto" aria-hidden="true" />
+          <p className="text-lg font-medium text-gray-800">Loading customer data...</p>
         </div>
       </div>
     );
@@ -319,8 +323,12 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   // ---- Error Fallback UI ----
   if (csoError && activeError) {
     return (
-      <div className="w-full min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-100 max-w-md text-center space-y-4">
+      <div
+        className="w-full min-h-screen flex items-center justify-center bg-orange-100"
+        aria-busy="false"
+        aria-label="Error loading data"
+      >
+        <div className="bg-white p-8 rounded-xl shadow-md border border-orange-200 max-w-md text-center space-y-4">
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto" aria-hidden="true" />
           <p className="text-lg font-medium text-gray-900">Failed to load data</p>
           <p className="text-sm text-gray-600">
@@ -331,7 +339,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
               fetchCSOList();
               fetchActiveRows();
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 hover:scale-105 transform"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-all duration-200 hover:scale-105 transform"
             aria-label="Retry loading data"
           >
             <Loader2 className="h-4 w-4" aria-hidden="true" />
@@ -343,23 +351,26 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
   }
 
   return (
-    <div className="relative bg-white p-6 sm:p-8 rounded-xl shadow-lg border border-gray-200 max-w-5xl mx-auto transition-all duration-500 animate-fade-in">
+    <div className="relative bg-white p-6 sm:p-8 rounded-xl shadow-md border border-orange-200 max-w-5xl mx-auto transition-all duration-500 animate-fade-in">
       {/* Toast Notification */}
       {toast && (
         <div
           className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
-            toast.type === "success" ? "bg-green-100 border-green-200 text-green-800" : "bg-red-100 border-red-200 text-red-800"
+            toast.type === "success"
+              ? "bg-teal-100 border-teal-200 text-teal-800"
+              : "bg-red-100 border-red-200 text-red-800"
           } animate-fade-in`}
           role="alert"
-          aria-live="polite"
+          aria-live="assertive"
+          aria-describedby="toast-message"
         >
           <div className="flex items-center gap-2">
             {toast.type === "success" ? (
-              <CheckCircle className="h-5 w-5" aria-hidden="true" />
+              <CheckCircle className="h-5 w-5 animate-pulse" aria-hidden="true" />
             ) : (
               <AlertCircle className="h-5 w-5" aria-hidden="true" />
             )}
-            <span>{toast.message}</span>
+            <span id="toast-message">{toast.message}</span>
           </div>
         </div>
       )}
@@ -368,7 +379,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-6 text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center gap-2 transition-colors duration-200 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-105 transform"
+          className="mb-6 text-sm font-medium text-orange-500 hover:text-orange-600 flex items-center gap-2 transition-colors duration-200 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-105 transform"
           type="button"
           aria-label="Go back"
         >
@@ -381,17 +392,17 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
 
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Phone className="h-8 w-8 text-blue-600" aria-hidden="true" />
-        <h3 className="text-2xl font-bold text-gray-900">Customer Lookup</h3>
+        <Phone className="h-8 w-8 text-orange-500" aria-hidden="true" />
+        <h3 className="text-2xl font-extrabold text-gray-900">Customer Lookup</h3>
       </div>
 
-      <p className="text-base text-gray-600 mb-10 leading-relaxed">
+      <p className="text-base sm:text-lg text-gray-600 mb-10 leading-relaxed">
         Search for existing customers by phone number and CSO, or fill out the employer requirements form for custom matching.
       </p>
 
       {/* Sticky Form */}
-      <div className="sticky top-4 z-20 bg-white sm:bg-transparent sm:shadow-none shadow-md rounded-lg sm:rounded-none">
-        <form onSubmit={handleSubmit} className="space-y-6 bg-gray-100 p-6 rounded-lg sm:shadow-sm">
+      <div className="sticky top-4 z-20 bg-white sm:bg-transparent sm:shadow-none shadow-md rounded-xl sm:rounded-none">
+        <form onSubmit={handleSubmit} className="space-y-6 bg-orange-50 p-6 rounded-xl sm:shadow-sm">
           {/* CSO Dropdown */}
           <div>
             <label htmlFor="cso" className="block text-sm font-medium text-gray-700 mb-2">
@@ -402,7 +413,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                 id="cso"
                 value={cso}
                 onChange={e => setCSO(e.target.value)}
-                className="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed text-base"
+                className="flex-1 px-4 py-3 bg-white border border-orange-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all duration-300 text-base disabled:bg-gray-100 disabled:cursor-not-allowed"
                 disabled={loadingCSO || isLoading || !!csoError}
                 required
                 aria-describedby={csoError ? "cso-error" : undefined}
@@ -414,12 +425,12 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                   </option>
                 ))}
               </select>
-              {loadingCSO && <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden="true" />}
+              {loadingCSO && <Loader2 className="h-5 w-5 animate-spin text-orange-500" aria-hidden="true" />}
               {csoError && (
                 <button
                   type="button"
                   onClick={fetchCSOList}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors duration-200 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-105 transform"
+                  className="text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors duration-200 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-105 transform"
                   aria-label="Retry loading CSO list"
                 >
                   Retry
@@ -427,7 +438,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
               )}
             </div>
             {csoError && (
-              <p id="cso-error" className="mt-2 text-sm text-red-600 flex items-center gap-2" role="alert">
+              <p id="cso-error" className="mt-2 text-sm text-red-600 flex items-center gap-2" role="alert" aria-describedby="cso-error">
                 <AlertCircle className="h-4 w-4" aria-hidden="true" />
                 {csoError}
               </p>
@@ -449,12 +460,12 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                 aria-label="Customer phone number"
                 aria-busy={isLoading}
                 placeholder="e.g., 91234567"
-                className={`flex-1 px-4 py-3 bg-white border rounded-lg focus:ring-2 focus:border-blue-500 outline-none transition-all duration-300 text-base ${
+                className={`flex-1 px-4 py-3 bg-white border rounded-lg focus:ring-2 focus:border-teal-500 outline-none transition-all duration-300 text-base ${
                   success
-                    ? "border-green-400 ring-green-300"
+                    ? "border-teal-400 ring-teal-300 animate-pulse"
                     : error
                     ? "border-red-400 ring-red-300"
-                    : "border-gray-300 focus:ring-blue-500"
+                    : "border-orange-300 focus:ring-teal-500"
                 } disabled:bg-gray-100 disabled:cursor-not-allowed`}
                 required
                 disabled={isLoading}
@@ -463,13 +474,13 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
               <button
                 type="submit"
                 disabled={isLoading || !contactNumber.trim() || !cso}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-all duration-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 hover:scale-105 transform"
+                className="px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-all duration-300 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 hover:scale-105 transform"
                 aria-label={isLoading ? "Looking up customer" : "Lookup customer"}
               >
                 {isLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
                 ) : success ? (
-                  <CheckCircle className="h-5 w-5 animate-pulse text-green-200" aria-hidden="true" />
+                  <CheckCircle className="h-5 w-5 animate-pulse text-teal-200" aria-hidden="true" />
                 ) : (
                   <Search className="h-5 w-5" aria-hidden="true" />
                 )}
@@ -477,13 +488,13 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
               </button>
             </div>
             {error && (
-              <p className="mt-2 text-sm text-red-600 flex items-center gap-2" role="alert">
+              <p className="mt-2 text-sm text-red-600 flex items-center gap-2" role="alert" aria-describedby="contact-error">
                 <AlertCircle className="h-4 w-4" aria-hidden="true" />
                 {error}
               </p>
             )}
             {success && (
-              <p className="mt-2 text-sm text-green-600 flex items-center gap-2" role="alert" aria-live="polite">
+              <p className="mt-2 text-sm text-teal-600 flex items-center gap-2" role="alert" aria-live="polite" aria-describedby="contact-success">
                 <CheckCircle className="h-4 w-4 animate-pulse" aria-hidden="true" />
                 Customer found successfully!
               </p>
@@ -494,7 +505,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
         {/* Employer Requirements Form Button */}
         <button
           onClick={onStartForm}
-          className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl shadow-md hover:from-blue-700 hover:to-blue-800 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300 hover:scale-105 transform w-full sm:w-auto"
+          className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl shadow-md hover:from-orange-600 hover:to-orange-700 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-all duration-300 hover:scale-105 transform w-full sm:w-auto"
           type="button"
           aria-label="Go to Employer Requirements Form"
         >
@@ -506,9 +517,9 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
       {/* Active Clients Table */}
       <div className="mt-10">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+          <h4 className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
             Active Clients
-            {loadingActive && <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden="true" />}
+            {loadingActive && <Loader2 className="h-5 w-5 animate-spin text-orange-500" aria-hidden="true" />}
           </h4>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -518,7 +529,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                 value={filterQuery}
                 onChange={e => debouncedSetFilterQuery(e.target.value)}
                 placeholder="Filter clients..."
-                className="pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-base w-44 sm:w-56 transition-all duration-200"
+                className="pl-10 pr-4 py-2 bg-white border border-orange-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-base w-44 sm:w-56 transition-all duration-200"
                 aria-label="Filter active clients"
               />
               <Search
@@ -527,16 +538,21 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                 aria-label="Search icon"
               />
             </div>
-            <button
-              onClick={clearFilter}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors duration-200 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-105 transform"
-              aria-label="Clear filter"
-            >
-              Clear
-            </button>
+            <div className="relative group">
+              <button
+                onClick={clearFilter}
+                className="text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors duration-200 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-105 transform"
+                aria-label="Clear filter"
+              >
+                Clear
+              </button>
+              <span className="absolute hidden group-hover:block -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-md shadow-md">
+                Clear filter
+              </span>
+            </div>
             <button
               onClick={exportToCSV}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 hover:scale-105 transform"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-all duration-200 hover:scale-105 transform"
               aria-label="Export table to CSV"
               title="Export to CSV"
             >
@@ -546,21 +562,21 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
           </div>
         </div>
         {activeError && (
-          <div className="mb-4 p-4 bg-red-100 border border-red-200 rounded-lg flex items-center gap-2 text-sm text-red-700" role="alert">
+          <div className="mb-4 p-4 bg-red-100 border border-red-200 rounded-lg flex items-center gap-2 text-sm text-red-700" role="alert" aria-describedby="active-error">
             <AlertCircle className="h-5 w-5" aria-hidden="true" />
-            {activeError}
+            <span id="active-error">{activeError}</span>
             <button
               onClick={fetchActiveRows}
-              className="ml-2 text-blue-600 hover:text-blue-800 font-medium underline focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-105 transform"
+              className="ml-2 text-orange-500 hover:text-orange-600 font-medium underline focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-105 transform"
               aria-label="Retry loading active clients"
             >
               Retry
             </button>
           </div>
         )}
-        <div className="hidden sm:block max-h-96 overflow-y-auto rounded-lg border border-gray-200 shadow-md" role="grid" aria-label="Active clients table">
-          <table className="min-w-full text-base divide-y divide-gray-200">
-            <thead className="bg-gray-100 sticky top-0 z-10">
+        <div className="hidden sm:block max-h-96 overflow-y-auto rounded-lg border border-orange-200 shadow-md" role="grid" aria-label="Active clients table">
+          <table className="min-w-full text-base divide-y divide-orange-200">
+            <thead className="bg-orange-50 sticky top-0 z-10">
               <tr>
                 <th className="px-6 py-4 text-left font-semibold text-gray-800 w-16">
                   <input
@@ -574,13 +590,13 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                     }}
                     checked={sortedRows.length > 0 && selectedRows.size === sortedRows.length}
                     aria-label="Select all rows"
-                    className="rounded h-5 w-5 text-blue-600 focus:ring-blue-500"
+                    className="rounded h-5 w-5 text-orange-500 focus:ring-teal-500"
                   />
                 </th>
                 {displayHeaders.map(header => (
                   <th
                     key={header}
-                    className="px-6 py-4 text-left font-semibold text-gray-800 cursor-pointer hover:bg-gray-200 transition-colors duration-150"
+                    className="px-6 py-4 text-left font-semibold text-gray-800 cursor-pointer hover:bg-orange-100 transition-colors duration-150"
                     onClick={() => handleSort(header)}
                     role="columnheader"
                     aria-sort={sortConfig.key === header ? sortConfig.direction ?? "none" : "none"}
@@ -588,34 +604,34 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                     <div className="flex items-center gap-2">
                       {header}
                       {sortConfig.key === header && sortConfig.direction === "ascending" && (
-                        <ChevronUp className="h-5 w-5 text-gray-500" aria-hidden="true" />
+                        <ChevronUp className="h-5 w-5 text-teal-500" aria-hidden="true" />
                       )}
                       {sortConfig.key === header && sortConfig.direction === "descending" && (
-                        <ChevronDown className="h-5 w-5 text-gray-500" aria-hidden="true" />
+                        <ChevronDown className="h-5 w-5 text-teal-500" aria-hidden="true" />
                       )}
                     </div>
                   </th>
                 ))}
-                <th className="px-6 py-4 text-left font-semibold text-gray-800 sticky right-0 bg-gray-100 w-24" aria-hidden="true">
+                <th className="px-6 py-4 text-left font-semibold text-gray-800 sticky right-0 bg-orange-50 w-24" aria-hidden="true">
                   Action
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-orange-200">
               {loadingActive ? (
                 // Skeleton Loading
                 Array.from({ length: 5 }).map((_, idx) => (
                   <tr key={idx} className="animate-pulse">
                     <td className="px-6 py-4">
-                      <div className="h-5 bg-gray-200 rounded w-6"></div>
+                      <div className="h-5 bg-orange-100 rounded w-6"></div>
                     </td>
                     {displayHeaders.map((_, headerIdx) => (
                       <td key={headerIdx} className="px-6 py-4">
-                        <div className="h-5 bg-gray-200 rounded w-3/4"></div>
+                        <div className="h-5 bg-orange-100 rounded w-3/4"></div>
                       </td>
                     ))}
                     <td className="px-6 py-4">
-                      <div className="h-5 bg-gray-200 rounded w-6"></div>
+                      <div className="h-5 bg-orange-100 rounded w-6"></div>
                     </td>
                   </tr>
                 ))
@@ -625,7 +641,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                     No active clients found. Try adjusting the filter or{" "}
                     <button
                       onClick={fetchActiveRows}
-                      className="text-blue-600 hover:text-blue-800 font-medium underline focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-105 transform"
+                      className="text-orange-500 hover:text-orange-600 font-medium underline focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-105 transform"
                       aria-label="Retry loading active clients"
                     >
                       retry
@@ -637,8 +653,8 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                   <tr
                     key={idx}
                     className={`${
-                      selectedRows.has(idx) ? "bg-blue-50" : idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-                    } hover:bg-blue-100 transition-colors duration-150`}
+                      selectedRows.has(idx) ? "bg-teal-50" : idx % 2 === 0 ? "bg-white" : "bg-orange-50"
+                    } hover:bg-teal-100 transition-colors duration-150`}
                     role="row"
                   >
                     <td className="px-6 py-4">
@@ -647,7 +663,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                         checked={selectedRows.has(idx)}
                         onChange={() => toggleRowSelection(idx)}
                         aria-label={`Select row ${idx + 1}`}
-                        className="rounded h-5 w-5 text-blue-600 focus:ring-blue-500"
+                        className="rounded h-5 w-5 text-orange-500 focus:ring-teal-500"
                       />
                     </td>
                     {displayHeaders.map(header => (
@@ -662,7 +678,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                     <td className="px-6 py-4 sticky right-0 bg-inherit">
                       <button
                         title="Send to Employer Form"
-                        className="relative text-blue-600 hover:text-blue-800 rounded-full p-2 transition-colors duration-200 group focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 hover:scale-110 transform"
+                        className="relative text-orange-500 hover:text-orange-600 rounded-full p-2 transition-colors duration-200 group focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 hover:scale-110 transform"
                         onClick={() => handleSendRow(row, idx)}
                         type="button"
                         aria-label={`Send row ${idx + 1} details to employer form`}
@@ -688,18 +704,18 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
         <div className="sm:hidden space-y-4">
           {loadingActive ? (
             Array.from({ length: 5 }).map((_, idx) => (
-              <div key={idx} className="p-5 bg-gray-50 rounded-lg shadow-sm animate-pulse">
+              <div key={idx} className="p-6 bg-orange-50 rounded-lg shadow-sm animate-pulse">
                 {displayHeaders.map((_, headerIdx) => (
-                  <div key={headerIdx} className="h-5 bg-gray-200 rounded w-3/4 mb-3"></div>
+                  <div key={headerIdx} className="h-5 bg-orange-100 rounded w-3/4 mb-3"></div>
                 ))}
               </div>
             ))
           ) : sortedRows.length === 0 ? (
-            <div className="p-5 bg-white rounded-lg shadow-sm text-center text-gray-600">
+            <div className="p-6 bg-white rounded-lg shadow-sm text-center text-gray-600">
               No active clients found. Try adjusting the filter or{" "}
               <button
                 onClick={fetchActiveRows}
-                className="text-blue-600 hover:text-blue-800 font-medium underline focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-105 transform"
+                className="text-orange-500 hover:text-orange-600 font-medium underline focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-105 transform"
                 aria-label="Retry loading active clients"
               >
                 retry
@@ -709,8 +725,8 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
             sortedRows.map((row, idx) => (
               <div
                 key={idx}
-                className={`p-5 rounded-lg border shadow-sm ${
-                  selectedRows.has(idx) ? "bg-blue-50 border-blue-200" : "bg-white border-gray-200"
+                className={`p-6 rounded-lg border shadow-sm ${
+                  selectedRows.has(idx) ? "bg-teal-50 border-teal-200" : "bg-white border-orange-200"
                 } transition-colors duration-150`}
               >
                 <div className="flex items-center justify-between mb-3">
@@ -720,7 +736,7 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                       checked={selectedRows.has(idx)}
                       onChange={() => toggleRowSelection(idx)}
                       aria-label={`Select row ${idx + 1}`}
-                      className="rounded h-6 w-6 text-blue-600 focus:ring-blue-500"
+                      className="rounded h-7 w-7 text-orange-500 focus:ring-teal-500"
                     />
                     <button
                       onClick={() => toggleRowExpansion(idx)}
@@ -733,16 +749,16 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
                   </div>
                   <button
                     title="Send to Employer Form"
-                    className="text-blue-600 hover:text-blue-800 p-2 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded hover:scale-110 transform"
+                    className="text-orange-500 hover:text-orange-600 p-2 focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 rounded hover:scale-110 transform"
                     onClick={() => handleSendRow(row, idx)}
                     type="button"
                     aria-label={`Send row ${idx + 1} details to employer form`}
                     disabled={sendingRow === idx}
                   >
                     {sendingRow === idx ? (
-                      <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+                      <Loader2 className="h-7 w-7 animate-spin" aria-hidden="true" />
                     ) : (
-                      <Send className="h-6 w-6" aria-hidden="true" />
+                      <Send className="h-7 w-7" aria-hidden="true" />
                     )}
                   </button>
                 </div>
@@ -763,8 +779,8 @@ export const ContactLookupForm: React.FC<ContactLookupFormProps> = ({
       </div>
 
       {/* Footer Note */}
-      <div className="mt-10 p-5 bg-blue-50 border border-blue-100 rounded-lg shadow-sm">
-        <p className="text-sm text-blue-700 leading-relaxed">
+      <div className="mt-10 p-5 bg-orange-50 border border-orange-100 rounded-lg shadow-sm">
+        <p className="text-sm text-orange-700 leading-relaxed">
           <strong>Note:</strong> CSO names and client information are sourced from the Opportunity (Combine_CMD) Google Sheet.
         </p>
       </div>

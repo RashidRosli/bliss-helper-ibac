@@ -40,48 +40,41 @@ export interface Helper {
 }
 
 export interface EmployerRequirements {
-  customerName: string;
-  contact: string;
-  email: string; // Added new field
-  referralSource: string; // Added new field
-  employerRace: string; // Added new field
-  jobscope: string[];
-  firstTimeHelper: boolean;
-  childrenAges: string[];
-  elderlyRelationship: string;
-  pets: string[];
-  petsRaw: string[];
-  residenceType: string;
-  roomSharing: boolean;
-  startDate: string;
-  preferences: string;
-  budget: string;
-  nationalityPreferences: string[]; // Changed from nationalityPreference (string) to array
-  helperType: string;
-  agePreference: string;
-  englishRequirement: string;
-  heightPreference: string;
-  weightPreference: string;
-  experienceTags: string[];
-  religionPreference: string;
-  educationRequirement: string;
-  maritalPreference: string;
-  helperChildrenAges: string;
-  focusArea: string[];
-  excludedBios: string[];
+  customerName?: string;
+  contact?: string;
+  email?: string;
+  referralSource?: string;
+  employerRace?: string;
+  jobscope?: string[];
   jobscopeLines?: string[];
-  jobscopeFacts?: any;
-  adults?: number;
-  kids?: number;
-  babies?: number;
-  twins?: boolean;
-  babiesEDD?: number;
-  kidAges?: string[];
-  elderly?: number;
-  elderlyAges?: string[];
-  elderlyNeeds?: string[];
-  petTypes?: string[];
-  specialNeeds?: string[];
+  jobscopeFacts?: Record<string, any>;
+  firstTimeHelper?: boolean;
+  childrenAges?: string[];
+  elderlyRelationship?: string;
+  pets?: string[];
+  petsRaw?: string[];
+  residenceType?: string;
+  roomSharing?: boolean;
+  startDate?: string;
+  preferences?: string;
+  budget?: string;
+  nationalityPreferences?: string[];
+  helperType?: string;
+  agePreference?: string;
+  englishRequirement?: string;
+  heightPreference?: string;
+  weightPreference?: string;
+  experienceTags?: string[];
+  religionPreference?: string;
+  educationRequirement?: string;
+  maritalPreference?: string;
+  helperChildrenAges?: string;
+  focusArea?: string[];
+  excludedBios?: string[];
+  householdType?: string; // Maps to residenceType
+  numberOfChildren?: number; // Derived from childrenAges
+  numberOfElderly?: number;
+  specialSkills?: string[]; // Maps to experienceTags
 }
 
 export interface InterviewQuestion {
@@ -95,6 +88,7 @@ export interface InterviewQuestion {
 export interface MatchResult {
   helper: Helper;
   score: number;
+  maxScore: number;
   matches: Array<{
     criteria: string;
     status: 'match' | 'partial' | 'mismatch';

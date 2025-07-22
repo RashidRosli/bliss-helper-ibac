@@ -19,6 +19,7 @@ export class MatchingService {
     // 3. Convert to MatchResult format for UI (normalizes scoring and mapping)
     return manualMatches.map(match => ({
       score: match.score * 10, // e.g. 8 => 80% for UI
+      maxScore: match.maxScore * 10, // e.g. 10 => 100% for UI
       helper: match.helper,
       similarity: match.score / 10, // e.g. 8 => 0.8 (optional, some UIs use it)
       matches: match.criteria.map(crit => ({
